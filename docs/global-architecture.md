@@ -1,110 +1,109 @@
-# Visão Global da Arquitetura e Jornadas Técnicas - HireTrust
+# Visão Global da Arquitetura - HireTrust
 
-Esta documentação detalha os fluxos de interação entre os componentes do HireTrust, integrando o ecossistema SaaS (Next.js/Neon) com a infraestrutura Web3 (Hardhat/Smart Contracts).
+O HireTrust é o **Orquestrador de Compromissos (Agreement Orchestrator)** que unifica Identidade Web3, Marketplace de Serviços e Execução Verificável. Esta documentação detalha os fluxos críticos de integração entre as camadas SaaS (Web2) e Blockchain (Web3).
 
 ---
 
-## 1. Diagramas de Sequência de Jornadas Críticas
+## 1. Diagramas de Sequência Ricos
 
-### DIAGRAMA 1: Jornada do Assinante - Onboarding, Assinatura e Travamento de Escrow
-Mapeamento dos fluxos de contratualização e garantia financeira inicial (Etapas 1 e 2).
+### Fluxo A: Onboarding, Assinatura e Escrow Automático
+Este fluxo descreve a jornada desde a escolha do serviço até o travamento de fundos on-chain após a confirmação do pagamento via PIX.
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    participant U as Assinante (Cliente)
-    participant F as Frontend Next.js (Dashboard)
-    participant B as Backend Next.js / Banco Neon (DB)
-    participant M as API Bancária Simulada (Mock Bank)
-    participant H as Smart Contract de Escrow & Smart SLA (Hardhat Node)
+    participant U as Assinante (Browser)
+    participant F as Frontend Next.js
+    participant API as API Bancária (Mock)
+    participant DB as DB Neon (PostgreSQL)
+    participant SC as Smart Contract Escrow (Hardhat)
 
-    U->>F: Escolhe oferta e assina digitalmente (Mock Provider)
-    F->>B: Envia termos assinados e dados do contrato
-    B->>B: Registra contrato no DB Neon (Status: PENDING)
-    B->>H: UC-04: Publica hash do contrato on-chain (Certificado de Garantia)
-    H-->>B: Confirmação de registro on-chain
+    U->>F: Seleciona Oferta e Clica em "Contratar"
+    F->>DB: Cria Registro de Agreement (Status: PENDING_PAYMENT)
+    F->>API: Solicita Geração de QR Code PIX (Setup/Fase 1)
+    API-->>F: Retorna QR Code e TransactionID
+    F-->>U: Exibe QR Code PIX para Pagamento
 
-    B->>M: Solicita QR Code PIX (Setup/Ciclo Recorrente)
-    M-->>F: Retorna QR Code PIX para o Assinante
-    U->>M: Realiza pagamento do PIX (Simulado)
+    Note over U, API: Assinante realiza o pagamento no App do Banco
 
-    M->>B: Envia Webhook HTTP assinado e idempotente (Confirmação de Liquidação)
-    Note over B: Valida assinatura do Webhook e CorrelationID
-    B->>B: Altera status da assinatura para 'PAID' no DB Neon
+    API->>F: Webhook: Pagamento Confirmado (TransactionID)
+    F->>DB: Atualiza Status: PAYMENT_CONFIRMED
+    F->>F: Prepara Transação Web3 (Privy/EOA)
+    F->>SC: lockFunds(AgreementID, Amount, TermsHash)
+    SC->>SC: Valida Assinaturas e Trava Fundos em Escrow
+    SC-->>F: Evento: EscrowFunded(AgreementID)
+    F->>DB: Atualiza Status: ACTIVE (Agreement On-chain)
+    F-->>U: Notifica: Serviço Ativo e Acesso Liberado
+```
 
-    B->>H: UC-06: Dispara transação de Escrow (Travamento de fundos)
-    Note over H: lockFunds(AgreementID)
-    H-->>B: Emite evento on-chain: EscrowLocked
-    B-->>F: Notifica sucesso e ativa dashboard
-    F->>U: Exibe confirmação de serviço ativo
+### Fluxo B: Monitoramento de SLA, Oráculo e Resolução de Disputa
+Demonstra como a telemetria off-chain impacta a liquidação financeira on-chain de forma automatizada.
+
+```mermaid
+sequenceDiagram
+    participant SC as Smart SLA Contract (Hardhat)
+    participant OR as Worker Oráculo (Node.js)
+    participant P as API do Prestador (Telemetria)
+    participant Next as API Next.js (Event Listener)
+    participant API as API Bancária (PIX Mock)
+
+    Note over SC, OR: Ciclo de Monitoramento (ex: cada 1 hora)
+    SC->>OR: Solicita Validação de SLA (AgreementID)
+    OR->>P: GET /metrics (Uptime, Tokens, Latência)
+    P-->>OR: Retorna Telemetria Real
+    OR->>OR: Calcula Compliance vs SLA Acordado
+    OR->>SC: submitProof(AgreementID, MerkleRoot, ComplianceStatus)
+
+    alt Violação de SLA Detectada
+        SC->>SC: Executa Liquidação de Cashback
+        SC-->>Next: Evento: SLABreachDetected(AgreementID, PenaltyAmount)
+        Next->>API: Dispara PIX de Reembolso para o Assinante
+        API-->>Next: Confirmação de Estorno
+        Next->>Next: Log: "Nota Fiscal Blockchain" com Hash de Prova
+    else SLA em Conformidade
+        SC->>SC: Mantém Fundos para Próximo Ciclo/Release
+    end
+```
+
+### Fluxo C: Ambiente de Testes E2E com Injeção de Provedor
+Detalha o bypass da UI manual da Privy para automação de testes determinísticos.
+
+```mermaid
+sequenceDiagram
+    participant TR as Test Runner (Playwright)
+    participant MP as Mock Provider Injection
+    participant F as Next.js Server
+    participant HH as Hardhat Local Node
+
+    TR->>MP: Injeta Chaves Privadas de Teste (Mock Wallet)
+    TR->>F: Acessa Rota de Checkout
+    F->>F: Detecta Ambiente de Teste (CI=true)
+    F->>MP: Solicita Assinatura de Transação Silenciosa
+    MP-->>F: Retorna Signature Determinística
+    F->>HH: Envia Transação de Escrow para Nodo Local
+    HH-->>F: Transação Confirmada em < 1s
+    F-->>TR: Retorna Status: SUCCESS (Test Ready)
+    TR->>TR: Valida Assertions no Banco e UI
 ```
 
 ---
 
-### DIAGRAMA 2: Jornada de Operação - Monitoramento de SLA Engine e Auditoria por Oráculos
-Fluxo de verificação neutra e transparência de dados em tempo real (Etapa 3).
+## 2. Deep-Dive dos Casos de Uso (Enriquecimento)
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant H as Smart Contract de SLA (Hardhat)
-    participant O as Worker do Oráculo (Agente Neutro)
-    participant P as API / Endpoint do Prestador (Serviço)
-    participant B as Backend Next.js (Watchdog / Event Listener)
-    participant F as Frontend Next.js (Dashboard Cliente)
+### UC-05 & UC-06: Fluxo Financeiro e Escrow (Híbrido)
+**Descrição Técnica:** O desafio de sistemas híbridos é a consistência entre o evento financeiro Web2 (PIX) e o estado do Smart Contract Web3. Para garantir a **idempotência**, cada transação financeira gera um `CorrelationID` único persistido no Neon DB.
+*   **Mecanismo de Segurança:** Antes de disparar o `lockFunds` no Hardhat, o backend verifica se já existe um `OnChainTxHash` associado ao `CorrelationID`. Se a transação on-chain falhar após o PIX ter sido recebido, um processo de reconciliação assíncrono (Job) tenta novamente o travamento, garantindo que não existam fundos "órfãos" no banco Neon sem proteção on-chain.
 
-    Note over H, O: Trigger Periódico de Auditoria On-chain
-    H-->>O: Emite evento de solicitação de auditoria
+### UC-08 a UC-11: SLA Engine & Execução Automática (O "Cartório Digital")
+**Descrição Técnica:** O HireTrust atua como um juiz neutro. O cruzamento matemático ocorre na camada do Worker Oráculo, mas o veredito é registrado na Blockchain.
+*   **Imutabilidade:** Cada medição de telemetria é convertida em um log estruturado. O hash desse log é enviado ao Smart Contract através do comando `submitProof`.
+*   **Impacto Arquitetural:** Isso transforma a blockchain em um "Cartório Digital". Mesmo que o prestador altere seus logs locais, a prova do momento da falha já está ancorada on-chain, tornando a contestação impossível.
 
-    O->>P: UC-08/UC-09: Chamada de telemetria HTTP (GET /health ou Consumo)
-    P-->>O: Retorna métricas de performance real (uptime/tokens consumidos)
-
-    O->>O: Assina evidência (Proof-of-Service)
-    O->>H: Submete transação com a prova para o Smart Contract de SLA
-
-    H-->>B: Evento on-chain detectado (SLA atualizado)
-    B->>B: Sincroniza dados no DB Neon
-
-    B->>F: Atualiza gráficos via WebSocket/Server Events (UC-12)
-    F->>H: UC-13: Consulta Merkle Root / Hash registrado on-chain
-    Note over F: Validação de integridade: Dados Locais vs. Blockchain
-    F->>U: Exibe "Verificado via Blockchain" no Dashboard
-```
+### UC-12 & UC-13: Transparência e Auditoria Verificável
+**Descrição Técnica:** Para provar que a plataforma SaaS não está manipulando os dashboards de uptime, implementamos a **Validação por Merkle Trees**.
+*   **Como funciona:** O Dashboard de Disponibilidade do cliente não lê apenas o banco Neon. Ele realiza um "Challenge" técnico: solicita o `Proof` (Caminho da Merkle Tree) de um evento específico. O frontend então recalcula o hash e o compara com o `MerkleRoot` gravado no Smart Contract durante o ciclo. Se os hashes baterem, o cliente tem a certeza matemática de que o dado visualizado é íntegro e condiz com o que foi acordado.
 
 ---
 
-### DIAGRAMA 3: Jornada do Prestador e Plataforma - Encerramento do Ciclo (Liquidação e Cashback via PIX)
-Fechamento de ciclo, cálculo de compliance e execução da justiça financeira automática (Etapa 4).
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant H as Smart Contract SLA / Escrow (Hardhat)
-    participant B as Backend Next.js (Billing Engine)
-    participant M as API Bancária Simulada (Mock Bank)
-    participant P as Prestador (Fornecedor)
-    participant S as Assinante (Cliente)
-
-    Note over H: Término do ciclo de faturamento
-    H->>H: UC-10: Executa Cálculo de Compliance (Telemetria vs. Regras)
-
-    Note over H: Cenário: Quebra de SLA detectada
-    H->>H: Liquida valores de forma ponderada (Penalidades)
-    H-->>B: Emite evento on-chain: SLAViolated (Cashback e Split líquido)
-
-    B->>M: UC-11: Dispara ordem de transferência PIX Cashback (Assinante)
-    M-->>S: Crédito recebido na conta do Assinante
-
-    B->>M: UC-11: Dispara ordem de transferência PIX Split Líquido (Prestador)
-    M-->>P: Valor líquido recebido na conta do Prestador
-
-    B->>H: UC-16: Registra hash final da Nota Fiscal e Prova de Serviço on-chain
-    H-->>B: Confirmação de registro fiscal imutável
-
-    P->>B: Acessa Validador Público (UC-17)
-    S->>B: Acessa Validador Público (UC-17)
-    B->>H: Consulta histórico de idoneidade (Audit Trail)
-    H-->>B: Retorna dados e hashes do ciclo
-    B-->>P: Exibe extrato e prova de idoneidade
-    B-->>S: Exibe extrato e prova de idoneidade
-```
+## 3. Arquitetura de Identidade e Acesso (RBAC & Privy)
+*   **Web3 Identity:** O login via Privy gera uma Embedded Wallet. No HireTrust, associamos o `PrivyID` ao `WalletAddress` no banco Neon, criando um link indissociável entre a identidade social e a autoridade financeira.
+*   **Gatekeeper:** O acesso ao serviço (ex: chaves n8n/Helicone) é liberado apenas se o `EscrowStatus` for `ACTIVE`. Caso o SLA caia abaixo de um nível crítico, o sistema pode suspender o acesso preventivamente até a resolução da disputa.
