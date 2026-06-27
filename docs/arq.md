@@ -1,103 +1,89 @@
-# Anatomia Profunda da Arquitetura - HireTrust
+# Arquitetura Profunda e Referência - HireTrust (SaaS Trustless)
 
-Esta documentação detalha a implementação real da arquitetura do HireTrust, estruturada em sub-níveis técnicos dentro da estrutura de pastas `/src`.
+Esta arquitetura utiliza os princípios de **Clean Architecture**, **Event Sourcing** e **CQRS** para transformar o HireTrust em um sistema de "Evidência como Produto".
 
----
+A estrutura abaixo separa estritamente a **Lógica de Negócio (Domínio)**, a **Orquestração (Aplicação)** e os **Detalhes Técnicos (Infraestrutura)**.
 
-## 1. Módulo: Agreement (Marketplace, Fases e Termos)
-Responsável por orquestrar a intenção de negócio e o workflow de aprovação.
+### Estrutura de Pastas Expandida
 
-### 1.1 domain/model/
-*   **Aggregate Root:** `ServiceOffer`
-    *   **Invariantes:**
-        *   Toda oferta deve definir pelo menos uma `ServicePhase`.
-        *   A comissão da plataforma (`CommissionRate`) deve estar entre 0% e 100%.
-    *   **Value Objects:** `PhaseDefinition`, `Price`, `TermsContent`.
-*   **Aggregate Root:** `Agreement`
-    *   **Propriedades:** `AgreementID`, `SubscriberID`, `ProviderID`, `CurrentPhase`, `Status`.
-    *   **Invariantes:**
-        *   Um acordo só transita para `ACTIVE` se houver assinatura digital (Privy) e financiamento do Escrow.
-        *   A Fase 2 só pode ser iniciada após o evento `PhaseApproved` da Fase 1.
-*   **Aggregate Root:** `SecretVault`
-    *   **Entities:** `VaultSecret` (ID, EncryptedData, SharedWith[]).
-    *   **Invariantes:** Acesso exclusivo aos proprietários do `AgreementID` associado.
-
-### 1.2 application/use-cases/ (Command Handlers)
-*   **`ProposeAgreementHandler`**: Orquestra a criação do rascunho. Não acessa o banco diretamente, usa o `IAgreementRepository`.
-*   **`ApprovePhaseHandler`**:
-    1. Valida se a fase atual está marcada como entregue.
-    2. Invoca o `ISettlementService` para liberar fundos.
-    3. Atualiza o estado do `Agreement` para a próxima fase.
-    4. Dispara `AgreementPhaseTransitionedEvent`.
-
-### 1.3 infrastructure/ (Adaptadores e Contratos)
-*   **`IAgreementRepository`**: Persistência em PostgreSQL via Prisma.
-*   **`ISmartContractAgreementRepository`**: Interface para ancoragem on-chain.
-    *   *Contrato:* `anchorTerms(hash: string): Promise<TxHash>`.
-*   **`IVaultProvider`**: Interface para o cofre criptográfico (ex: Vault do Hashicorp ou solução baseada em AWS KMS).
-
-### 1.4 read-side/projections/
-*   **`AgreementDashboardProjector`**: Ouve `AgreementCreated`, `PhaseApproved` e `AgreementSuspended`.
-*   **Estratégia:** Transforma o log de eventos em uma tabela `active_agreements_view` para o dashboard do assinante.
+```text
+/src
+├── core/                       # Kernel Compartilhado (DDD Building Blocks)
+│   ├── domain/                 # BaseAggregate, BaseEvent, BaseValueObject, UniqueEntityID
+│   └── shared-bus/             # EventBus (NATS/Redis), MessageDispatcher
+├── modules/
+│   ├── identity/               # Contexto de Identidade (Privy/Web3 Auth)
+│   │   ├── domain/             # Agregado: ActorIdentity
+│   │   ├── application/        # Handlers: LinkWallet, Authenticate
+│   │   └── infrastructure/     # Adapters: PrivyAdapter
+│   ├── agreement/              # Contexto de Acordos (Marketplace, Fases e Termos)
+│   │   ├── domain/             # Agregados: ServiceOffer, Agreement, SecretVault, Review
+│   │   ├── application/        # Commands: ProposeAgreement, SignAgreement, ApprovePhase, SubmitReview
+│   │   └── infrastructure/     # Adapters: Prisma, VaultProvider
+│   ├── execution/              # Contexto de Prova de Serviço (O "Proof" & Gatekeeper)
+│   │   ├── domain/             # Agregado: ServiceProof (MerkleTree, HashChain)
+│   │   ├── application/        # Handlers: RegisterMetric, ProvisionAccess
+│   │   └── infrastructure/     # Adapters: Helicone, Chainlink, OracleProvider
+│   └── settlement/             # Contexto Financeiro (O "Trust" & Escrow)
+│       ├── domain/             # Agregado: EscrowAccount, Entidades: Transaction
+│       ├── application/        # Handlers: FundEscrow, ReleasePayment, ExecuteRefund
+│       └── infrastructure/     # Adapters: Viem, Stripe, PaymentGateway
+├── read-side/                  # O Lado de Consulta (CQRS - Projeções otimizadas)
+│   ├── dashboard/              # ViewModels: ActiveAgreements, UptimeTimeline
+│   └── transparency/           # Validators: AuditTrailGenerator, BlockchainVerifier
+└── tests/
+    ├── bdd/                    # Especificações Gherkin (.feature)
+    └── unit/                   # Testes de unidade dos Agregados (Puros)
+```
 
 ---
 
-## 2. Módulo: Execution (Gatekeeper e Proof-of-Service)
-Foco na integração de provas criptográficas e controle de acesso.
+### Detalhes Estratégicos da Arquitetura
 
-### 2.1 domain/model/
-*   **Aggregate Root:** `ServiceProof`
-    *   **Invariantes:**
-        *   O `MerkleRoot` é recalculado atomaticamente a cada `EvidenceAdded`.
-        *   A prova de ZK (`ZKProof`) deve ser validada contra os parâmetros do SLA do `Agreement`.
-    *   **Value Objects:** `MerkleTree`, `ZKProofData`, `SLAThresholds`.
-*   **Entities:** `Evidence` (Data, Source, Hash).
+#### 1. A Camada de Domínio (`domain/`)
+Aqui não há frameworks. Se você decidir trocar o Next.js por NestJS ou o banco de dados, o seu código de negócio (regras de multa, cálculos de uptime) permanece intacto.
+*   **Aggregates:** Garantem a consistência. O `Agreement` não pode ser assinado se o status for `Terminated`.
+*   **Value Objects:** Protegem os dados. O `UptimePercentage` não é um `number` comum, é um VO que valida se está entre 0 e 100.
 
-### 2.2 application/use-cases/
-*   **`RegisterMetricHandler`**: Recebe dados brutos dos Oráculos. Abstrai a lógica de infraestrutura delegando a criação da evidência para o Agregado.
-*   **`ProvisionAccessHandler`**: Domain Service que decide, baseado no status do `Agreement`, se deve ativar ou revogar chaves de acesso.
+#### 2. A Camada de Infraestrutura (`infrastructure/`)
+Aqui isolamos os "External Agents":
+*   **Blockchain Adapters:** Encapsulam a complexidade do `ethers.js` ou `viem`. O restante do sistema não sabe como o contrato on-chain funciona, apenas chama métodos como `anchorTerms()`.
+*   **Oráculos:** O módulo `execution` trata o `Chainlink` e o `Helicone` como interfaces. Se amanhã você trocar o provedor, só precisa implementar o novo adaptador que segue a interface esperada.
 
-### 2.3 infrastructure/
-*   **`IResourceGatekeeper`**: Interface para controle de acesso.
-    *   *Implementação:* `HeliconeAdapter` (Gera Scoped Keys com budget cap).
-*   **`IZKProofGenerator`**: Interface para motores de prova (Gnark/Noir).
-*   **`IOracleProvider`**: Adaptadores para Chainlink ou Watchdogs customizados.
+#### 3. A Camada de Leitura (`read-side/`)
+Esta é a chave para a performance do marketplace e dashboards.
+*   Em um sistema **Event Sourcing**, você nunca faz `SELECT SUM(valor) FROM escrows`.
+*   Em vez disso, o `SettlementModule` publica um evento `PaymentReleased`. O projetor ouve esse evento e incrementa o saldo em uma tabela de leitura pronta para o front-end. **Isso elimina queries complexas e garante velocidade.**
 
----
-
-## 3. Módulo: Settlement (Escrow e Finanças)
-Gerencia a liquidez e as regras de comissão.
-
-### 3.1 domain/model/
-*   **Aggregate Root:** `EscrowAccount`
-    *   **Regras Intrínsecas:**
-        *   Retenção de comissão no `Deposit`.
-        *   Liberação bloqueada sem `EvidenceVerified`.
-    *   **Value Objects:** `PayoutSplit`, `Currency`.
-
-### 3.2 application/use-cases/
-*   **`ExecutePayoutHandler`**: Abstrai a chamada blockchain.
-    1. O Domain Service `PayoutOrchestrator` verifica as condições.
-    2. Chama `IEscrowBlockchainRepository.releaseFunds()`.
+#### 4. O Sistema de Auditoria (Transparência)
+A pasta `read-side/transparency` é o que gera a **"Nota Fiscal Blockchain"** (UC-16). Ela lê o `EventStore` de todos os módulos e gera uma prova de integridade (Hash final) que o assinante usa para verificar se o sistema não alterou os dados retroativamente.
 
 ---
 
-## 4. Integração Smart Contract (Abstração)
+## Detalhamento Técnico Profundo dos Módulos
 
-Para evitar o acoplamento com `ethers.js` ou `viem` na camada de aplicação:
+### 1. Módulo: Agreement (Marketplace e Workflow)
+Responsável por orquestrar a intenção de negócio e o workflow de aprovação entre fases.
+*   **Agregados:** `ServiceOffer` (Catálogo/SEO Boost), `Agreement` (Workflow de fases), `SecretVault` (Cofre compartilhado), `Review` (Avaliações).
+*   **Invariantes:** A Fase 2 (Manutenção) só inicia após o evento `PhaseApproved` da Fase 1 (Consultoria).
+*   **Secret Vault:** Ambiente criptografado onde Prestador e Assinante compartilham tokens (n8n, URLs, logins) vinculados ao `AgreementID`.
 
-1.  **Interface no Domain/Repositories:** `ISmartContractRepository`.
-2.  **Uso no Application:** `await this.scRepository.register(data)`.
-3.  **Implementação na Infrastructure:** `ViemAdapter` que lida com ABIs, RPCs e GAS.
+### 2. Módulo: Execution (Gatekeeper e Provas)
+O coração técnico que garante que o serviço contratado foi efetivamente entregue.
+*   **Gatekeeper (Helicone):** Provisiona chaves de API com `budget_cap` e revogação automática baseada no status da assinatura.
+*   **Prova de Serviço:** Utiliza **Merkle Trees** para evidências granulares e **ZK-Proofs** para atestar o cumprimento do SLA sem expor logs individuais.
 
-Isso permite que o HireTrust troque de blockchain (L1 -> L2) apenas alterando o adaptador na camada de infraestrutura.
+### 3. Módulo: Settlement (Escrow e Comissões)
+Gerencia a liquidez e garante que o repasse só ocorra quando a regra de negócio for respeitada.
+*   **Regra de Comissão:** Retida automaticamente no momento do financiamento do Escrow (Venda).
+*   **Liquidação:** O `Release` exige o evento `ServiceProofValidated` do módulo de Execution e a aprovação formal do assinante.
+
+### 4. Módulo: Identity (Privy & Embedded Wallets)
+Responsável pela ponte entre a identidade social e a carteira digital.
+*   **Privy:** Gera automaticamente uma *Embedded Wallet* no login, servindo como o ID único do usuário na Web3 e garantindo a soberania dos fundos para transações e assinaturas.
 
 ---
 
-## 5. Fluxo Event Sourcing e CQRS
-
-1.  **Ação:** Usuário aprova fase.
-2.  **Comando:** `ApprovePhaseCommand`.
-3.  **Estado:** `Agreement` publica `PhaseApprovedEvent`.
-4.  **Projeção:** `SettlementProjector` ouve e move o saldo da "Conta de Garantia" para "Disponível para Repasse" no banco de leitura.
-5.  **Consistência:** O estado On-chain é atualizado de forma assíncrona pelo `SettlementBlockchainAdapter` ouvindo o mesmo evento.
+### Como esta estrutura escala?
+*   **Adição de Módulos:** Se o HireTrust precisar de um módulo de `Compliance/KYC` amanhã, você apenas cria `modules/compliance/` e segue o mesmo padrão.
+*   **BDD First:** Antes de escrever o código de `application/`, você escreve o `.feature` em `tests/bdd/`. Isso força você a pensar no comportamento do usuário (o Assinante) antes da complexidade técnica.
