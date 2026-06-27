@@ -64,26 +64,29 @@ A pasta `read-side/transparency` é o que gera a **"Nota Fiscal Blockchain"** (U
 
 ### 1. Módulo: Agreement (Marketplace e Workflow)
 Responsável por orquestrar a intenção de negócio e o workflow de aprovação entre fases.
-*   **Agregados:** `ServiceOffer` (Catálogo/SEO Boost), `Agreement` (Workflow de fases), `SecretVault` (Cofre compartilhado), `Review` (Avaliações).
-*   **Invariantes:** A Fase 2 (Manutenção) só inicia após o evento `PhaseApproved` da Fase 1 (Consultoria).
-*   **Secret Vault:** Ambiente criptografado onde Prestador e Assinante compartilham tokens (n8n, URLs, logins) vinculados ao `AgreementID`.
+*   **Agregados:**
+    *   `ServiceOffer`: Gerencia a vitrine de serviços e as definições genéricas de fases.
+    *   `Agreement`: Gerencia o workflow dinâmico de fases. Possui uma coleção de `ServicePhase` e um `currentPhaseIndex`.
+    *   `SecretVault`: Ambiente criptografado compartilhado.
+*   **Invariantes:** Uma fase só é ativada se a fase imediatamente anterior no índice estiver com status `COMPLETED`.
+*   **Workflow Dinâmico:** Suporta N fases (Milestones, Recorrências, Setup). Cada fase define seu preço e tipo (Fixo ou Recorrente).
 
 ### 2. Módulo: Execution (Gatekeeper e Provas)
 O coração técnico que garante que o serviço contratado foi efetivamente entregue.
-*   **Gatekeeper (Helicone):** Provisiona chaves de API com `budget_cap` e revogação automática baseada no status da assinatura.
-*   **Prova de Serviço:** Utiliza **Merkle Trees** para evidências granulares e **ZK-Proofs** para atestar o cumprimento do SLA sem expor logs individuais.
+*   **Gatekeeper (Helicone):** Provisiona chaves de API com `budget_cap`. Ativado automaticamente para fases do tipo `RECURRING` assim que estas entram em vigor.
+*   **Prova de Serviço:** Utiliza **Merkle Trees** e **ZK-Proofs** para atestar o cumprimento do SLA.
 
 ### 3. Módulo: Settlement (Escrow e Comissões)
 Gerencia a liquidez e garante que o repasse só ocorra quando a regra de negócio for respeitada.
-*   **Regra de Comissão:** Retida automaticamente no momento do financiamento do Escrow (Venda).
-*   **Liquidação:** O `Release` exige o evento `ServiceProofValidated` do módulo de Execution e a aprovação formal do assinante.
+*   **Regra de Comissão:** Retida atomaticamente no momento do financiamento inicial do Escrow Pool.
+*   **Liquidação:** O `Release` ocorre proporcionalmente ao preço da fase aprovada.
 
 ### 4. Módulo: Identity (Privy & Embedded Wallets)
 Responsável pela ponte entre a identidade social e a carteira digital.
-*   **Privy:** Gera automaticamente uma *Embedded Wallet* no login, servindo como o ID único do usuário na Web3 e garantindo a soberania dos fundos para transações e assinaturas.
+*   **Privy:** Gera automaticamente uma *Embedded Wallet* no login, servindo como o ID único do usuário na Web3.
 
 ---
 
 ### Como esta estrutura escala?
-*   **Adição de Módulos:** Se o HireTrust precisar de um módulo de `Compliance/KYC` amanhã, você apenas cria `modules/compliance/` e segue o mesmo padrão.
-*   **BDD First:** Antes de escrever o código de `application/`, você escreve o `.feature` em `tests/bdd/`. Isso força você a pensar no comportamento do usuário (o Assinante) antes da complexidade técnica.
+*   **Flexibilidade de Fases:** O sistema não está preso a "Setup" e "Manutenção". Ele pode suportar "Setup", "Sprint 1", "Sprint 2", "QA", "Go-live" e "Suporte Mensal".
+*   **BDD First:** O comportamento do usuário (assinante e prestador) guia a implementação das máquinas de estado das fases.
