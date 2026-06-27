@@ -1,3 +1,5 @@
+## Stack
+
 Em um ambiente descentralizado híbrido, a conexão entre uma **Smart Wallet (gerada via Account Abstraction/ERC-4337)** e um **Nó Blockchain Local (Hardhat)** é o maior gargalo de testes, principalmente para testes de ponta a ponta (E2E).
 
 Se você usar o Privy em modo de teste nativo, ele gerará carteiras que esperam uma infraestrutura de produção (como Bundlers e Paymasters da testnet) que o seu nó básico do Hardhat não possui por padrão.
