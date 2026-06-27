@@ -1,48 +1,48 @@
-# Planejamento Estruturado: Gateway de Serviços "Trustless SLA"
+# Planejamento Estruturado: Gateway de Serviços e Gestão de Assinaturas
 
-Este plano integra tecnologias de oráculos, arquiteturas de monitoramento verificável e mecanismos de penalidade automatizados.
+Este plano integra tecnologias de oráculos, arquiteturas de monitoramento verificável e mecanismos de gestão de assinaturas automatizados.
 
 ## Fase 1: Arquitetura de Governança e Onboarding (UC-01 a UC-04)
 
-O objetivo desta fase é transformar o contrato de serviço em uma lógica legível por máquina e imutável.
+O objetivo desta fase é transformar o contrato de serviço e a oferta de assinatura em lógica programática.
 
-*   **Definição do Smart SLA:** Utilizar uma linguagem de especificação (como a extensão OpenSLO) para converter as cláusulas de SLA em predicados verificáveis.
-*   **Registro On-chain:** Publicar o hash do contrato e os parâmetros de SLO (Objetivos de Nível de Serviço) na blockchain.
-*   **Reputação do Prestador:** Implementar um sistema onde a reputação inicial do fornecedor seja baseada em seu histórico de conformidade registrado no ledger.
+*   **Definição do Smart SLA & Planos:** Utilizar uma linguagem de especificação para converter cláusulas de SLA e **regras de tarifação de planos** em predicados verificáveis.
+*   **Registro On-chain:** Publicar o hash do contrato, parâmetros de SLO e termos de assinatura na blockchain.
+*   **Reputação do Prestador:** Histórico de conformidade como métrica de confiança para novos assinantes.
 
-## Fase 2: Camada Financeira e Escrow Automatizado (UC-05 a UC-07)
+## Fase 2: Camada Financeira e Motor de Assinaturas (UC-05 a UC-07)
 
-Integrar pagamentos com garantias programáticas para assegurar que os fundos só sejam liberados mediante a entrega do serviço.
+Integrar pagamentos recorrentes com garantias programáticas (Escrow).
 
-*   **Escrow Baseado em Staking:** O prestador pode ser obrigado a realizar um depósito de garantia (staking) para assegurar o cumprimento do SLA.
-*   **Liquidação Automática:** Implementar contratos inteligentes de liquidação baseados em escrow, que liberam pagamentos ao prestador ou geram reembolsos/cashback automáticos ao assinante em caso de falha.
-*   **Split de Risco:** Utilizar algoritmos para calcular dinamicamente a distribuição de valores entre o pagamento do serviço e o fundo de reserva para multas.
+*   **Billing State Machine:** Implementar o motor de estados da assinatura (Active, Suspended, Cancelled) integrado ao fluxo financeiro.
+*   **Escrow Baseado em Ciclos:** Gestão de fundos por ciclo mensal, garantindo que o pagamento do mês só seja liberado após a validação do SLA do período.
+*   **Liquidação Automática e Cashback:** Smart contracts que processam o repasse ao prestador ou geram crédito de assinatura ao cliente em caso de falha.
 
 ## Fase 3: Motor de Monitoramento e SLA Engine (UC-08 a UC-11)
 
-Esta é a camada operacional que conecta o mundo real à blockchain através de oráculos e ambientes confiáveis.
+Camada operacional de coleta de dados e cálculo de faturamento.
 
-*   **Monitoramento Ativo (Watchdog):** Oráculos realizam verificações periódicas (ex: `GET /health`) para medir uptime e latência.
-*   **Monitoramento Verificável via TEE:** Utilizar Ambientes de Execução Confiável (TEEs) para coletar métricas de consumo e performance. Isso garante que os dados coletados pelos oráculos não foram manipulados antes de chegar à blockchain.
-*   **Cálculo de Compliance Off-chain com Provas ZK:** Para escala, os cálculos de SLA podem ser feitos fora da rede, gerando uma Prova de Conhecimento Zero (ZKP) que comprova a violação ou conformidade sem expor os dados brutos de telemetria.
+*   **Monitoramento Ativo (Watchdog):** Oráculos medindo disponibilidade e latência.
+*   **Medição de Consumo Verificável:** Coleta de métricas de uso para faturamento de excedentes, utilizando TEEs ou Provas ZK para garantir integridade.
+*   **Cálculo de Compliance Off-chain:** Processamento do fechamento do ciclo de faturamento com geração de prova de conformidade.
 
-## Fase 4: Transparência, Auditoria e Proof-of-Service (UC-12 a UC-17)
+## Fase 4: Transparência e Portal do Assinante (UC-12 a UC-17)
 
-Garantir que o assinante tenha evidências criptográficas da entrega do serviço.
+Garantir que o cliente tenha controle total sobre suas assinaturas e evidências da entrega.
 
-*   **Logchain:** Armazenar os logs de disponibilidade de forma assistida por blockchain, onde cada entrada de log é selada criptografadamente com o hash do bloco anterior, garantindo imutabilidade.
-*   **Proof-of-Service (PoS):** Implementar um consenso de prova de serviço que valide fisicamente que o serviço anunciado foi fornecido à rede.
-*   **Dashboard e Validador Público:** O painel do assinante deve exibir o status de SLA acumulado e fornecer links diretos para os hashes registrados no "Cartório Digital" (Blockchain).
+*   **Logchain:** Logs de disponibilidade e consumo selados criptografadamente.
+*   **Proof-of-Service (PoS):** Validação física e lógica da prestação do serviço.
+*   **Dashboard de Gestão:** Interface para o assinante gerenciar renovações, visualizar faturas e auditar o SLA em tempo real através da blockchain.
 
 ## Fase 5: Validação de Desempenho e Stress Testing
 
-Antes do lançamento, a infraestrutura deve ser validada para suportar a carga de transações de monitoramento.
+Validar a escala do sistema de faturamento e monitoramento.
 
-*   **Benchmarking com Hyperledger Caliper:** Avaliar a latência e a taxa de transferência (TPS) das transações de SLA. Os testes sugerem que, para monitorar 120 provedores com atraso médio de 300ms, são necessários ao menos 8 vCPUs.
-*   **Otimização de Transações:** Avaliar se a lógica de conformidade deve rodar integralmente dentro do contrato inteligente (chaincode) ou se deve ser processada por uma API de orquestração para manter a estabilidade do tempo de resposta.
+*   **Benchmarking de Billing:** Avaliar a capacidade de processamento de milhares de fechamentos de faturas simultâneos.
+*   **Otimização de Transações:** Estratégias para registrar hashes de fechamento de ciclo de forma eficiente (Batching) na blockchain.
 
 ## Fluxo de Valor Resumido
 
-*   **Assinante:** Contrata com "paz de espírito", sabendo que o monitoramento é feito por agentes neutros (Oráculos/TEEs) e o reembolso é automático via Smart Contract.
-*   **Prestador:** Incentivado à alta performance, pois seu recebimento integral e sua reputação dependem de provas imutáveis de serviço.
-*   **Plataforma:** Atua como o orquestrador que garante a integridade do ecossistema e monetiza através da taxa de transação garantida por SLA.
+*   **Assinante:** Contrata e gerencia múltiplos serviços com "paz de espírito", sabendo que o faturamento é justo e o reembolso é automático.
+*   **Prestador:** Receita recorrente previsível e reputação verificável.
+*   **Plataforma:** Orquestrador central que monetiza via gestão de assinaturas e garantia de SLA.
