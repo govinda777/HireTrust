@@ -2,6 +2,32 @@
 
 Esta documentação detalha a anatomia técnica do HireTrust, estruturada sob os pilares de **Clean Architecture**, **Event Sourcing** e **CQRS**. O sistema é desenhado para ser "Evidência como Produto", garantindo que a lógica de negócio seja independente de protocolos de blockchain ou provedores de infraestrutura.
 
+
+## 0. Estrutura de Pastas (Anatomia Real)
+
+```text
+src/
+├── core/                       # Shared Kernel
+│   ├── domain/                 # BaseAggregate, BaseEvent
+│   └── shared-bus/             # EventBus (NATS/Redis)
+└── modules/
+    └── [module]/               # Ex: agreement, execution, settlement
+        ├── domain/
+        │   ├── model/          # Aggregate Roots, Entities, VOs (Sem frameworks)
+        │   ├── events/         # Domain Events (Sourcing)
+        │   └── repositories/   # Interfaces (Contratos de persistência/BC)
+        ├── application/
+        │   ├── use-cases/      # Command Handlers (Orquestração pura)
+        │   └── services/       # Domain Services (Lógica multi-agregado)
+        ├── infrastructure/
+        │   ├── persistence/    # Repositories SQL (Prisma)
+        │   ├── blockchain/     # Smart Contract Repositories (Viem/Ethers)
+        │   └── adapters/       # Oráculos, Gateways, APIs
+        └── read-side/
+            ├── projections/    # Transforma Eventos -> Read Models (SQL/Redis)
+            └── dtos/           # Modelos otimizados para consulta (DPO)
+```
+
 ---
 
 ## 1. Módulo: Agreement (Contexto de Acordos/SLA)
@@ -120,28 +146,3 @@ Os *Domain Services* nunca veem um `provider.getSigner()` ou `contract.connect()
 *   A implementação `ViemEscrowAdapter` (na Infrastructure) traduz isso para uma chamada de função `releaseFunds` no Solidity, lidando com GAS, Nonces e Reverts.
 
 ---
-
-## 5. Estrutura de Pastas (Anatomia Real)
-
-```text
-src/
-├── core/                       # Shared Kernel
-│   ├── domain/                 # BaseAggregate, BaseEvent
-│   └── shared-bus/             # EventBus (NATS/Redis)
-└── modules/
-    └── [module]/               # Ex: agreement, execution, settlement
-        ├── domain/
-        │   ├── model/          # Aggregate Roots, Entities, VOs (Sem frameworks)
-        │   ├── events/         # Domain Events (Sourcing)
-        │   └── repositories/   # Interfaces (Contratos de persistência/BC)
-        ├── application/
-        │   ├── use-cases/      # Command Handlers (Orquestração pura)
-        │   └── services/       # Domain Services (Lógica multi-agregado)
-        ├── infrastructure/
-        │   ├── persistence/    # Repositories SQL (Prisma)
-        │   ├── blockchain/     # Smart Contract Repositories (Viem/Ethers)
-        │   └── adapters/       # Oráculos, Gateways, APIs
-        └── read-side/
-            ├── projections/    # Transforma Eventos -> Read Models (SQL/Redis)
-            └── dtos/           # Modelos otimizados para consulta (DPO)
-```
