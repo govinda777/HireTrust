@@ -10,7 +10,9 @@ O HireTrust é uma plataforma que automatiza a confiança e a gestão financeira
 
 Explore os detalhes do sistema:
 
-*   [**Casos de Uso**](docs/use-case.md): Detalhamento dos atores, gestão de assinaturas, monitoramento e fluxos financeiros.
+*   [**Casos de Uso**](docs/use-case.md): Detalhamento dos atores e deep-dive técnico nos fluxos financeiros e SLA.
+*   [**Arquitetura Técnica**](docs/arq.md): Anatomia profunda do sistema, DDD, Event Sourcing e integração Hardhat.
+*   [**Visão Global e Fluxos**](docs/global-architecture.md): Diagramas de sequência detalhados dos processos críticos.
 *   [**Roadmap Técnico**](docs/roadmap.md): Planejamento das fases de desenvolvimento, incluindo o motor de faturamento e governança.
 
 ## 🛠️ Tecnologias Chave

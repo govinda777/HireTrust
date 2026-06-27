@@ -54,3 +54,19 @@ Este documento descreve as funcionalidades de uma plataforma (SaaS) que atua com
 *   **Prestador:** Recebimento recorrente garantido por alta performance.
 *   **Assinante:** Gestão centralizada de fornecedores com proteção financeira automática.
 *   **Plataforma:** Monetização via taxa de transação e gestão do ecossistema de confiança.
+
+---
+
+## 8. Deep-Dive Técnico dos Casos de Uso Críticos
+
+### UC-05 & UC-06: Gestão Financeira e Escrow Híbrido
+*   **O Que é:** A coordenação entre o pagamento via PIX (Web2) e o travamento de fundos em Smart Contract (Web3).
+*   **Como Funciona:** Utilizamos uma abordagem de **Liquidação Idempotente**. O backend Next.js atua como o orquestrador. Ao receber a confirmação da API Bancária via Webhook, o sistema consulta o estado atual no banco Neon e no Smart Contract. Se a transação on-chain já tiver sido disparada (verificada via CorrelationID), o sistema ignora a retentativa. Caso contrário, submete o `lockFunds` ao Escrow no Hardhat. Isso evita travamentos duplos e garante que o fundo só seja bloqueado se o pagamento real existir.
+
+### UC-08 a UC-11: SLA Engine e Cartório Digital
+*   **O Que é:** Monitoramento contínuo da performance do prestador com execução automática de multas.
+*   **Como Funciona:** O **Oráculo do HireTrust** consome endpoints de telemetria do prestador (ex: `/metrics`). O resultado é comparado com os limites de SLA definidos no Agregado `Agreement`. A cada ciclo, um hash da medição é gravado on-chain. Se o SLA cair abaixo do limite (ex: < 99.5% uptime), o Smart SLA emite um evento de quebra. O Next.js, ouvindo esse evento, dispara automaticamente um PIX de cashback para o assinante. Os logs gravados funcionam como um **Cartório Digital**, fornecendo provas imutáveis para auditoria.
+
+### UC-12 & UC-13: Transparência e Auditoria Verificável
+*   **O Que é:** Garantia para o cliente de que os dados de performance exibidos no Dashboard são verdadeiros.
+*   **Como Funciona:** Implementamos a validação via **Merkle Trees**. A cada ciclo de SLA, o Oráculo gera uma árvore de hashes de todos os logs coletados e grava o `MerkleRoot` na blockchain. O cliente, ao visualizar o Dashboard de Disponibilidade, pode clicar em qualquer ponto de dados para verificar sua prova. O sistema gera o "Caminho de Merkle" e o valida contra o root on-chain. Se os dados tivessem sido manipulados pelo HireTrust, o hash não bateria, garantindo transparência total.
