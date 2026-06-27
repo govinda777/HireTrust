@@ -63,7 +63,7 @@ graph TD
 ## 6. Diagrama de Sequência Detalhado (Fluxo de Aprovação e Vault)
 
 ```mermaid
-sequence_diagram
+sequenceDiagram
     participant U as Assinante (Privy Wallet)
     participant P as Prestador (Privy Wallet)
     participant A as Agreement Module
