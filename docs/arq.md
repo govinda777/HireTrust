@@ -1,148 +1,103 @@
-# Arquitetura Profunda - HireTrust
+# Anatomia Profunda da Arquitetura - HireTrust
 
-Esta documentação detalha a anatomia técnica do HireTrust, estruturada sob os pilares de **Clean Architecture**, **Event Sourcing** e **CQRS**. O sistema é desenhado para ser "Evidência como Produto", garantindo que a lógica de negócio seja independente de protocolos de blockchain ou provedores de infraestrutura.
-
-
-## 0. Estrutura de Pastas (Anatomia Real)
-
-```text
-src/
-├── core/                       # Shared Kernel
-│   ├── domain/                 # BaseAggregate, BaseEvent
-│   └── shared-bus/             # EventBus (NATS/Redis)
-└── modules/
-    └── [module]/               # Ex: agreement, execution, settlement
-        ├── domain/
-        │   ├── model/          # Aggregate Roots, Entities, VOs (Sem frameworks)
-        │   ├── events/         # Domain Events (Sourcing)
-        │   └── repositories/   # Interfaces (Contratos de persistência/BC)
-        ├── application/
-        │   ├── use-cases/      # Command Handlers (Orquestração pura)
-        │   └── services/       # Domain Services (Lógica multi-agregado)
-        ├── infrastructure/
-        │   ├── persistence/    # Repositories SQL (Prisma)
-        │   ├── blockchain/     # Smart Contract Repositories (Viem/Ethers)
-        │   └── adapters/       # Oráculos, Gateways, APIs
-        └── read-side/
-            ├── projections/    # Transforma Eventos -> Read Models (SQL/Redis)
-            └── dtos/           # Modelos otimizados para consulta (DPO)
-```
+Esta documentação detalha a implementação real da arquitetura do HireTrust, estruturada em sub-níveis técnicos dentro da estrutura de pastas `/src`.
 
 ---
 
-## 1. Módulo: Agreement (Contexto de Acordos/SLA)
-Define as regras contratuais, parâmetros de SLA e as consequências financeiras (cashback/multas).
+## 1. Módulo: Agreement (Marketplace, Fases e Termos)
+Responsável por orquestrar a intenção de negócio e o workflow de aprovação.
 
 ### 1.1 domain/model/
-*   **Aggregate Root:** `Agreement`
-    *   **Propriedades:** `AgreementID`, `ProviderID`, `SubscriberID`, `Status` (Draft, Active, Suspended, Terminated), `CycleConfig`, `TermsHash`.
+*   **Aggregate Root:** `ServiceOffer`
     *   **Invariantes:**
-        *   Um acordo só transita para `Active` se o `TermsHash` estiver ancorado on-chain e houver confirmação de assinatura de ambas as partes.
-        *   O `Status` não pode ser alterado para `Active` se o `EscrowAccount` (Settlement) não estiver inicializado.
-*   **Entities:** `Terms` (Definição técnica: periodicidade, métricas-alvo), `Offer` (O template original do prestador).
-*   **Value Objects:**
-    *   `SLAThreshold`: Valida percentuais (ex: 99.9%).
-    *   `CompensationRule`: Estrutura composta (Métrica, Operador, Valor, Penalidade).
-    *   `CurrencyAmount`: Objeto para valores monetários com precisão fixa.
+        *   Toda oferta deve definir pelo menos uma `ServicePhase`.
+        *   A comissão da plataforma (`CommissionRate`) deve estar entre 0% e 100%.
+    *   **Value Objects:** `PhaseDefinition`, `Price`, `TermsContent`.
+*   **Aggregate Root:** `Agreement`
+    *   **Propriedades:** `AgreementID`, `SubscriberID`, `ProviderID`, `CurrentPhase`, `Status`.
+    *   **Invariantes:**
+        *   Um acordo só transita para `ACTIVE` se houver assinatura digital (Privy) e financiamento do Escrow.
+        *   A Fase 2 só pode ser iniciada após o evento `PhaseApproved` da Fase 1.
+*   **Aggregate Root:** `SecretVault`
+    *   **Entities:** `VaultSecret` (ID, EncryptedData, SharedWith[]).
+    *   **Invariantes:** Acesso exclusivo aos proprietários do `AgreementID` associado.
 
-### 1.2 application/use-cases/
-*   **Command Handlers:**
-    *   `ProposeAgreementHandler`: Orquestra a criação do rascunho e persiste no repositório local.
-    *   `SignAgreementHandler`: Coleta assinaturas digitais, invoca o `IAgreementBlockchainRepository` para ancoragem e publica `AgreementSignedEvent`.
-*   **Domain Services:**
-    *   `SLAValidatorService`: Garante que as métricas definidas no contrato são compatíveis com os Oráculos disponíveis no sistema.
+### 1.2 application/use-cases/ (Command Handlers)
+*   **`ProposeAgreementHandler`**: Orquestra a criação do rascunho. Não acessa o banco diretamente, usa o `IAgreementRepository`.
+*   **`ApprovePhaseHandler`**:
+    1. Valida se a fase atual está marcada como entregue.
+    2. Invoca o `ISettlementService` para liberar fundos.
+    3. Atualiza o estado do `Agreement` para a próxima fase.
+    4. Dispara `AgreementPhaseTransitionedEvent`.
 
-### 1.3 infrastructure/
-*   **Interfaces (Contratos):**
-    *   `IAgreementRepository`: Persistência de estado (ex: `PrismaAgreementRepository`).
-    *   `ISmartContractAgreementRepository`: Interface que define métodos como `anchorTerms(termsHash)` e `getOnChainStatus(agreementId)`.
-*   **Adaptadores:** `PrismaAgreementAdapter`, `ViemAgreementAdapter`.
+### 1.3 infrastructure/ (Adaptadores e Contratos)
+*   **`IAgreementRepository`**: Persistência em PostgreSQL via Prisma.
+*   **`ISmartContractAgreementRepository`**: Interface para ancoragem on-chain.
+    *   *Contrato:* `anchorTerms(hash: string): Promise<TxHash>`.
+*   **`IVaultProvider`**: Interface para o cofre criptográfico (ex: Vault do Hashicorp ou solução baseada em AWS KMS).
 
 ### 1.4 read-side/projections/
-*   **Projection:** `AgreementDashboardProjector`
-*   **Estratégia:** Ouve `AgreementSigned` e cria uma linha na tabela `ActiveAgreements` otimizada para buscas por `SubscriberID`.
+*   **`AgreementDashboardProjector`**: Ouve `AgreementCreated`, `PhaseApproved` e `AgreementSuspended`.
+*   **Estratégia:** Transforma o log de eventos em uma tabela `active_agreements_view` para o dashboard do assinante.
 
 ---
 
-## 2. Módulo: Execution (Contexto de Prova de Serviço)
-O coração técnico. Transforma dados brutos de monitoramento em provas criptográficas inquestionáveis.
+## 2. Módulo: Execution (Gatekeeper e Proof-of-Service)
+Foco na integração de provas criptográficas e controle de acesso.
 
 ### 2.1 domain/model/
 *   **Aggregate Root:** `ServiceProof`
-    *   **Propriedades:** `AgreementID`, `Interval`, `MerkleRoot`, `Proofs` (Lista de evidências), `ZKProofData`.
     *   **Invariantes:**
-        *   O `MerkleRoot` é uma função pura dos hashes de todas as evidências coletadas no intervalo.
-        *   Uma evidência só é aceita se vier de um `OracleID` autorizado no `Agreement`.
-*   **Entities:** `Evidence` (Timestamp, Value, RawPayloadHash).
-*   **Value Objects:**
-    *   `MerkleTree`: Lógica de construção da árvore e geração de caminhos (proofs).
-    *   `MetricValue`: Valor normalizado da métrica (Uptime: 1, Downtime: 0).
+        *   O `MerkleRoot` é recalculado atomaticamente a cada `EvidenceAdded`.
+        *   A prova de ZK (`ZKProof`) deve ser validada contra os parâmetros do SLA do `Agreement`.
+    *   **Value Objects:** `MerkleTree`, `ZKProofData`, `SLAThresholds`.
+*   **Entities:** `Evidence` (Data, Source, Hash).
 
 ### 2.2 application/use-cases/
-*   **Command Handlers:**
-    *   `RegisterMetricHandler`: Recebe o payload do Oráculo. Se o evento for crítico (ex: queda detectada), gera imediatamente uma `MerkleProof` individual e publica `MetricRecordedEvent`.
-    *   `ConsolidateIntervalHandler`: Fecha o ciclo, gera o `ZKProof` (atestando que o Uptime Médio > X% sem expor logs individuais) e publica `ServiceCycleClosedEvent`.
-*   **Domain Services:**
-    *   `ProofOrchestrator`: Abstrai a complexidade de geração de Merkle Trees e integração com circuitos ZK (ex: Circom/SnarkJS).
+*   **`RegisterMetricHandler`**: Recebe dados brutos dos Oráculos. Abstrai a lógica de infraestrutura delegando a criação da evidência para o Agregado.
+*   **`ProvisionAccessHandler`**: Domain Service que decide, baseado no status do `Agreement`, se deve ativar ou revogar chaves de acesso.
 
 ### 2.3 infrastructure/
-*   **Interfaces (Contratos):**
-    *   `IOracleProvider`: Contrato para adaptadores de métricas (Chainlink, Prometheus).
-    *   `IZKProofGenerator`: Contrato para motores de prova (Gnark/Noir).
-    *   `IServiceProofRepository`: Interface de persistência para as árvores de prova completas (off-chain).
-*   **Adaptadores:** `ChainlinkFunctionsAdapter`, `K8sMetricsAdapter`.
-
-### 2.4 read-side/projections/
-*   **Projection:** `UptimeTimelineProjector`
-*   **Estratégia:** Transforma os eventos de métrica em uma estrutura de Redis (Time Series) para renderização instantânea do gráfico de pulso no dashboard.
+*   **`IResourceGatekeeper`**: Interface para controle de acesso.
+    *   *Implementação:* `HeliconeAdapter` (Gera Scoped Keys com budget cap).
+*   **`IZKProofGenerator`**: Interface para motores de prova (Gnark/Noir).
+*   **`IOracleProvider`**: Adaptadores para Chainlink ou Watchdogs customizados.
 
 ---
 
-## 3. Módulo: Settlement (Contexto Financeiro/Trust)
-Garante que o dinheiro flua apenas quando a prova de serviço é validada.
+## 3. Módulo: Settlement (Escrow e Finanças)
+Gerencia a liquidez e as regras de comissão.
 
 ### 3.1 domain/model/
 *   **Aggregate Root:** `EscrowAccount`
-    *   **Propriedades:** `AgreementID`, `Balance`, `Allocation` (Split de taxas), `State` (Locked, Releasing, Completed).
-    *   **Invariantes:**
-        *   A liberação (`Release`) exige o `ServiceCycleClosedEvent` com o `MerkleRoot` validado.
-        *   O saldo nunca pode ser negativo.
-*   **Entities:** `Transaction` (Registro financeiro individual).
-*   **Value Objects:**
-    *   `PayoutSplit`: Define a divisão entre Prestador (ex: 95%) e Taxa de Plataforma (ex: 5%).
-    *   `CashbackAmount`: Valor calculado com base na falha de SLA reportada.
+    *   **Regras Intrínsecas:**
+        *   Retenção de comissão no `Deposit`.
+        *   Liberação bloqueada sem `EvidenceVerified`.
+    *   **Value Objects:** `PayoutSplit`, `Currency`.
 
 ### 3.2 application/use-cases/
-*   **Command Handlers:**
-    *   `ProcessSettlementHandler`: Ouve `ServiceCycleClosedEvent`. Consulta o estado do SLA no `ExecutionReadModel` e calcula o Payout final.
-    *   `ExecutePayoutHandler`: Chama o `IEscrowBlockchainRepository` para disparar a transação on-chain e publica `PayoutExecutedEvent`.
-*   **Domain Services:**
-    *   `FinancialAuditor`: Verifica a integridade do saldo antes de qualquer liberação.
-
-### 3.3 infrastructure/
-*   **Interfaces (Contratos):**
-    *   `IEscrowBlockchainRepository`: Interface para o Smart Contract de Tesouraria. Métodos: `lockFunds()`, `release(amount, proof)`.
-    *   `IPaymentGateway`: Interface para rampa de saída (PIX).
-*   **Adaptadores:** `ViemEscrowAdapter`, `StripeAdapter`.
-
-### 3.4 read-side/projections/
-*   **Projection:** `TransactionHistoryProjector`
-*   **Estratégia:** Consolida transações off-chain e hashes on-chain em um modelo de extrato unificado.
+*   **`ExecutePayoutHandler`**: Abstrai a chamada blockchain.
+    1. O Domain Service `PayoutOrchestrator` verifica as condições.
+    2. Chama `IEscrowBlockchainRepository.releaseFunds()`.
 
 ---
 
-## 4. Integração e Consistência (Mecânica Profunda)
+## 4. Integração Smart Contract (Abstração)
 
-### 4.1 Off-chain vs On-chain (Anchoring)
-O HireTrust não tenta colocar tudo na blockchain. Ele usa o **Event Store** off-chain como fonte de verdade para a lógica e a **Blockchain** como um cartório de provas imutáveis.
-1.  O `ExecutionModule` coleta 10.000 métricas (Event Store).
-2.  Gera uma **Merkle Tree** dessas métricas.
-3.  Apenas o **Merkle Root** é enviado para o Smart Contract (via `IServiceProofRepository`).
-4.  No momento do pagamento, o `SettlementModule` envia o valor + o `MerkleRoot` para o contrato de Escrow.
+Para evitar o acoplamento com `ethers.js` ou `viem` na camada de aplicação:
 
-### 4.2 Abstração de Chamadas Web3
-Os *Domain Services* nunca veem um `provider.getSigner()` ou `contract.connect()`.
-*   O `ExecutePayoutHandler` chama `IEscrowRepository.release(amount, proof)`.
-*   A implementação `ViemEscrowAdapter` (na Infrastructure) traduz isso para uma chamada de função `releaseFunds` no Solidity, lidando com GAS, Nonces e Reverts.
+1.  **Interface no Domain/Repositories:** `ISmartContractRepository`.
+2.  **Uso no Application:** `await this.scRepository.register(data)`.
+3.  **Implementação na Infrastructure:** `ViemAdapter` que lida com ABIs, RPCs e GAS.
+
+Isso permite que o HireTrust troque de blockchain (L1 -> L2) apenas alterando o adaptador na camada de infraestrutura.
 
 ---
+
+## 5. Fluxo Event Sourcing e CQRS
+
+1.  **Ação:** Usuário aprova fase.
+2.  **Comando:** `ApprovePhaseCommand`.
+3.  **Estado:** `Agreement` publica `PhaseApprovedEvent`.
+4.  **Projeção:** `SettlementProjector` ouve e move o saldo da "Conta de Garantia" para "Disponível para Repasse" no banco de leitura.
+5.  **Consistência:** O estado On-chain é atualizado de forma assíncrona pelo `SettlementBlockchainAdapter` ouvindo o mesmo evento.
