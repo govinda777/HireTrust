@@ -1,105 +1,109 @@
 # Visão Global da Arquitetura - HireTrust
 
-O HireTrust é o **Orquestrador de Compromissos (Agreement Orchestrator)** que unifica Identidade Web3, Marketplace de Serviços e Execução Verificável.
+O HireTrust é o **Orquestrador de Compromissos (Agreement Orchestrator)** que unifica Identidade Web3, Marketplace de Serviços e Execução Verificável. Esta documentação detalha os fluxos críticos de integração entre as camadas SaaS (Web2) e Blockchain (Web3).
 
-## 1. O Fluxo de Valor e Identidade (Privy)
+---
 
-A plataforma utiliza a **Privy** como camada de identidade.
-*   **Onboarding Simples:** O usuário faz login via Social/Email e a Privy cria automaticamente uma **Embedded Wallet**.
-*   **Identificador Único:** O `WalletAddress` gerado torna-se a identidade primária do Prestador e do Assinante em todo o sistema (On-chain e Off-chain).
-*   **Transações Transparentes:** A carteira permite que o usuário assine termos e autorize repasses de forma segura, mantendo a soberania dos fundos.
+## 1. Diagramas de Sequência Ricos
 
-## 2. O Marketplace e Prova Social (Reviews)
-
-O Marketplace não exibe apenas o preço; ele é um motor de reputação.
-*   **Sistema de Avaliações:** Cada ciclo concluído gera um evento de `ReviewRequested`. Notas e comentários são persistidos no Read-Side e ancorados periodicamente on-chain para garantir que a reputação do prestador não possa ser manipulada.
-*   **Marketplace Fees:** A comissão da plataforma é retida no momento da venda (Funding do Escrow).
-
-## 3. Fluxo de Trabalho Dinâmico (Multi-Phase Workflow)
-
-O HireTrust gerencia serviços complexos através de uma coleção dinâmica de fases. Não há um limite fixo para o número ou tipo de etapas:
-
-1.  **Definição de Fases:** O prestador define uma lista de `ServicePhase` (ex: Setup, Milestone 1, Milestone 2, Manutenção Recorrente).
-2.  **Gatilho de Execução:** Cada fase possui seu próprio `Escrow` e condições de liberação.
-3.  **Aprovação e Sequenciamento:** O assinante aprova a entrega de uma fase, liberando os fundos e ativando automaticamente a próxima fase da fila.
-
-## 4. O "Secret Vault" (Cofre de Segredos)
-
-Para que o serviço funcione, as partes compartilham informações sensíveis no Vault.
-*   **Vault Compartilhado:** Ambiente criptografado associado ao `AgreementID`.
-*   **Acesso Controlado:** O acesso às credenciais (URLs n8n, tokens, logins) é liberado conforme o status das fases ativas.
-
-## 5. Diagrama Global de Fluxo (Dinâmico)
-
-```mermaid
-graph TD
-    subgraph Identity_Layer
-        A[Login Social/Email] -->|Privy| B[Embedded Wallet]
-    end
-
-    subgraph Marketplace_Module
-        B -->|Prestador| C[Cria Oferta com Lista de Fases]
-        B -->|Assinante| D[Checkout & Assinatura]
-        D -->|Comissão Plataforma| E[Plataforma Revenue]
-    end
-
-    subgraph Dynamic_Escrow_Workflow
-        D -->|Bloqueio Total| F[Escrow Pool]
-        F -->|Fase Atual| G{Execução Fase N}
-        G -->|Aprovação Assinante| H[Liberação Proporcional]
-        H -->|Existe Próxima?| I{Loop de Fases}
-        I -->|Sim| G
-        I -->|Não| J[Acordo Concluído]
-    end
-
-    subgraph Execution_Gatekeeper
-        G -->|Se Recorrente| K[Gatekeeper/Helicone]
-        K -->|Monitoramento SLA| L[Oráculo]
-    end
-```
-
-## 6. Diagrama de Sequência Detalhado (Iteração de Fases)
+### Fluxo A: Onboarding, Assinatura e Escrow Automático
+Este fluxo descreve a jornada desde a escolha do serviço até o travamento de fundos on-chain após a confirmação do pagamento via PIX.
 
 ```mermaid
 sequenceDiagram
-    participant U as Assinante (Privy Wallet)
-    participant P as Prestador (Privy Wallet)
-    participant A as Agreement Module
-    participant S as Settlement (Escrow)
-    participant E as Execution (Gatekeeper)
+    participant U as Assinante (Browser)
+    participant F as Frontend Next.js
+    participant API as API Bancária (Mock)
+    participant DB as DB Neon (PostgreSQL)
+    participant SC as Smart Contract Escrow (Hardhat)
 
-    Note over U, P: Acordo assinado e Fundo no Escrow Pool
+    U->>F: Seleciona Oferta e Clica em "Contratar"
+    F->>DB: Cria Registro de Agreement (Status: PENDING_PAYMENT)
+    F->>API: Solicita Geração de QR Code PIX (Setup/Fase 1)
+    API-->>F: Retorna QR Code e TransactionID
+    F-->>U: Exibe QR Code PIX para Pagamento
 
-    loop Para cada Fase na Lista
-        A->>A: Ativar Fase[i]
-        alt Se Fase for Recorrente
-            A->>E: ProvisionAccess()
-        end
-        P->>P: Executa Serviço / Entrega Milestone
-        P->>A: SubmitDelivery(Fase[i])
-        U->>A: ApprovePhase(Fase[i])
-        A->>S: ReleaseFunds(Fase[i])
-        S-->>P: Transferência Realizada
-    end
+    Note over U, API: Assinante realiza o pagamento no App do Banco
 
-    A->>A: MarkAgreementAsCompleted()
+    API->>F: Webhook: Pagamento Confirmado (TransactionID)
+    F->>DB: Atualiza Status: PAYMENT_CONFIRMED
+    F->>F: Prepara Transação Web3 (Privy/EOA)
+    F->>SC: lockFunds(AgreementID, Amount, TermsHash)
+    SC->>SC: Valida Assinaturas e Trava Fundos em Escrow
+    SC-->>F: Evento: EscrowFunded(AgreementID)
+    F->>DB: Atualiza Status: ACTIVE (Agreement On-chain)
+    F-->>U: Notifica: Serviço Ativo e Acesso Liberado
 ```
 
-## 7. Máquina de Estados da Fase (ServicePhase)
+### Fluxo B: Monitoramento de SLA, Oráculo e Resolução de Disputa
+Demonstra como a telemetria off-chain impacta a liquidação financeira on-chain de forma automatizada.
 
-Cada fase dentro de um acordo segue seu próprio ciclo de vida:
+```mermaid
+sequenceDiagram
+    participant SC as Smart SLA Contract (Hardhat)
+    participant OR as Worker Oráculo (Node.js)
+    participant P as API do Prestador (Telemetria)
+    participant Next as API Next.js (Event Listener)
+    participant API as API Bancária (PIX Mock)
 
-1.  **`PENDING`**: Aguardando a conclusão da fase anterior.
-2.  **`FUNDED`**: Recursos garantidos no pool de escrow.
-3.  **`IN_PROGRESS`**: Prestador autorizado a executar.
-4.  **`REVIEW_REQUESTED`**: Entrega submetida para avaliação.
-5.  **`COMPLETED`**: Aprovada pelo assinante e fundos liberados.
+    Note over SC, OR: Ciclo de Monitoramento (ex: cada 1 hora)
+    SC->>OR: Solicita Validação de SLA (AgreementID)
+    OR->>P: GET /metrics (Uptime, Tokens, Latência)
+    P-->>OR: Retorna Telemetria Real
+    OR->>OR: Calcula Compliance vs SLA Acordado
+    OR->>SC: submitProof(AgreementID, MerkleRoot, ComplianceStatus)
 
-## 8. Detalhamento de Comandos (Escalável)
+    alt Violação de SLA Detectada
+        SC->>SC: Executa Liquidação de Cashback
+        SC-->>Next: Evento: SLABreachDetected(AgreementID, PenaltyAmount)
+        Next->>API: Dispara PIX de Reembolso para o Assinante
+        API-->>Next: Confirmação de Estorno
+        Next->>Next: Log: "Nota Fiscal Blockchain" com Hash de Prova
+    else SLA em Conformidade
+        SC->>SC: Mantém Fundos para Próximo Ciclo/Release
+    end
+```
 
-*   **`ProposeAgreementCommand`**:
-    *   *Input*: `ProviderID, SubscriberID, Phases[], TermsHash`.
-    *   *Phases Array*: `[{ name: "Setup", price: 1500, type: "FIXED" }, { name: "Manutenção", price: 80, type: "RECURRING" }]`.
-*   **`ApprovePhaseCommand`**:
-    *   *Input*: `AgreementID, PhaseIndex`.
-    *   *Logic*: Move o ponteiro `currentPhaseIndex` para o próximo item após a liquidação.
+### Fluxo C: Ambiente de Testes E2E com Injeção de Provedor
+Detalha o bypass da UI manual da Privy para automação de testes determinísticos.
+
+```mermaid
+sequenceDiagram
+    participant TR as Test Runner (Playwright)
+    participant MP as Mock Provider Injection
+    participant F as Next.js Server
+    participant HH as Hardhat Local Node
+
+    TR->>MP: Injeta Chaves Privadas de Teste (Mock Wallet)
+    TR->>F: Acessa Rota de Checkout
+    F->>F: Detecta Ambiente de Teste (CI=true)
+    F->>MP: Solicita Assinatura de Transação Silenciosa
+    MP-->>F: Retorna Signature Determinística
+    F->>HH: Envia Transação de Escrow para Nodo Local
+    HH-->>F: Transação Confirmada em < 1s
+    F-->>TR: Retorna Status: SUCCESS (Test Ready)
+    TR->>TR: Valida Assertions no Banco e UI
+```
+
+---
+
+## 2. Deep-Dive dos Casos de Uso (Enriquecimento)
+
+### UC-05 & UC-06: Fluxo Financeiro e Escrow (Híbrido)
+**Descrição Técnica:** O desafio de sistemas híbridos é a consistência entre o evento financeiro Web2 (PIX) e o estado do Smart Contract Web3. Para garantir a **idempotência**, cada transação financeira gera um `CorrelationID` único persistido no Neon DB.
+*   **Mecanismo de Segurança:** Antes de disparar o `lockFunds` no Hardhat, o backend verifica se já existe um `OnChainTxHash` associado ao `CorrelationID`. Se a transação on-chain falhar após o PIX ter sido recebido, um processo de reconciliação assíncrono (Job) tenta novamente o travamento, garantindo que não existam fundos "órfãos" no banco Neon sem proteção on-chain.
+
+### UC-08 a UC-11: SLA Engine & Execução Automática (O "Cartório Digital")
+**Descrição Técnica:** O HireTrust atua como um juiz neutro. O cruzamento matemático ocorre na camada do Worker Oráculo, mas o veredito é registrado na Blockchain.
+*   **Imutabilidade:** Cada medição de telemetria é convertida em um log estruturado. O hash desse log é enviado ao Smart Contract através do comando `submitProof`.
+*   **Impacto Arquitetural:** Isso transforma a blockchain em um "Cartório Digital". Mesmo que o prestador altere seus logs locais, a prova do momento da falha já está ancorada on-chain, tornando a contestação impossível.
+
+### UC-12 & UC-13: Transparência e Auditoria Verificável
+**Descrição Técnica:** Para provar que a plataforma SaaS não está manipulando os dashboards de uptime, implementamos a **Validação por Merkle Trees**.
+*   **Como funciona:** O Dashboard de Disponibilidade do cliente não lê apenas o banco Neon. Ele realiza um "Challenge" técnico: solicita o `Proof` (Caminho da Merkle Tree) de um evento específico. O frontend então recalcula o hash e o compara com o `MerkleRoot` gravado no Smart Contract durante o ciclo. Se os hashes baterem, o cliente tem a certeza matemática de que o dado visualizado é íntegro e condiz com o que foi acordado.
+
+---
+
+## 3. Arquitetura de Identidade e Acesso (RBAC & Privy)
+*   **Web3 Identity:** O login via Privy gera uma Embedded Wallet. No HireTrust, associamos o `PrivyID` ao `WalletAddress` no banco Neon, criando um link indissociável entre a identidade social e a autoridade financeira.
+*   **Gatekeeper:** O acesso ao serviço (ex: chaves n8n/Helicone) é liberado apenas se o `EscrowStatus` for `ACTIVE`. Caso o SLA caia abaixo de um nível crítico, o sistema pode suspender o acesso preventivamente até a resolução da disputa.

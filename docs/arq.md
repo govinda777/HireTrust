@@ -1,92 +1,65 @@
-# Arquitetura Profunda e Referência - HireTrust (SaaS Trustless)
+# Especificação Técnica de Arquitetura - HireTrust
 
-Esta arquitetura utiliza os princípios de **Clean Architecture**, **Event Sourcing** e **CQRS** para transformar o HireTrust em um sistema de "Evidência como Produto".
+Esta documentação detalha a anatomia técnica do HireTrust, estruturada sob os pilares de **Clean Architecture**, **Event Sourcing** e **CQRS**. O sistema é desenhado como um sistema distribuído híbrido, integrando a agilidade do SaaS (Next.js/Neon) com a imutabilidade da Blockchain (Hardhat/Smart Contracts).
 
-A estrutura abaixo separa estritamente a **Lógica de Negócio (Domínio)**, a **Orquestração (Aplicação)** e os **Detalhes Técnicos (Infraestrutura)**.
+---
 
-### Estrutura de Pastas Expandida
+## 1. Estrutura de Domínio e Sub-níveis Técnicos (DDD)
+
+A implementação física em `/src` segue rigorosamente a separação de preocupações:
+
+*   **domain/model/**: Contém *Aggregate Roots* (ex: `Agreement`, `ServiceProof`, `EscrowAccount`), Entidades e *Value Objects* (ex: `SLAThreshold`, `MerkleRoot`). As regras de negócio são protegidas por invariantes (ex: um Escrow não pode ser liberado sem uma prova de serviço validada).
+*   **application/use-cases/**: Orquestração pura. Contém *Command Handlers* que executam a lógica de negócio sem vazar detalhes de infraestrutura.
+*   **infrastructure/**: Adaptadores de baixo nível.
+    *   `BlockchainAdapter`: Encapsula a complexidade do `ethers.js` ou `viem` para interagir com o Hardhat.
+    *   `PaymentGateway`: Interface com APIs bancárias simuladas para fluxos de PIX.
+*   **read-side/projections/**: Escuta eventos do *Event Store* e atualiza o banco Neon com modelos de leitura otimizados, eliminando queries complexas (SELECT SUM).
+
+---
+
+## 2. Deep-Dive de Casos de Uso Críticos
+
+### UC-05 & UC-06: Fluxo Financeiro e Escrow (Liquidação Híbrida)
+**Descrição Técnica:** Este caso de uso gerencia a transição do pagamento Web2 (PIX) para a garantia Web3 (Escrow).
+*   **Idempotência e Segurança:** Para evitar gastos duplos ou travamentos órfãos, implementamos uma máquina de estados financeira com `CorrelationID`. O pagamento PIX é o gatilho; após a confirmação via webhook, o backend Next.js verifica a existência de transações on-chain pendentes antes de submeter o `lockFunds` ao Smart Contract.
+*   **Impacto:** Garante que o dinheiro do assinante esteja sempre protegido por código (Escrow), e que o prestador tenha a garantia de recebimento antes de iniciar o serviço.
+
+### UC-08 a UC-11: SLA Engine & Execução Automática ("Cartório Digital")
+**Descrição Técnica:** O motor de SLA cruza a telemetria em tempo real com os termos do contrato.
+*   **Orquestração de Oráculos:** O Oráculo (Worker) coleta métricas (uptime, consumo de tokens via Helicone) e gera uma prova criptográfica. O cruzamento matemático entre o SLA real vs. o acordado ocorre off-chain por performance, mas o resultado final (veredito) é enviado ao Smart Contract.
+*   **Prova de Serviço:** A blockchain atua como um **Cartório Digital**, registrando logs imutáveis que servem como evidência jurídica e técnica. Se o SLA for descumprido, o contrato liquida o cashback automaticamente, emitindo um evento que dispara o PIX de reembolso via API bancária.
+
+### UC-12 & UC-13: Transparência e Auditoria Verificável
+**Descrição Técnica:** Resolvemos o problema da confiança no provedor SaaS através da prova matemática.
+*   **Verificação via Merkle Trees:** O Dashboard do cliente exibe dados do banco Neon, mas permite a auditoria direta contra a blockchain. O sistema armazena o `MerkleRoot` de cada ciclo de monitoramento on-chain.
+*   **Auditoria:** O cliente pode solicitar a prova de qualquer log de serviço. O HireTrust fornece o "Path" na Merkle Tree que, ao ser hashado no frontend, deve coincidir com o root gravado na blockchain. Isso prova que os logs de disponibilidade não foram alterados retroativamente.
+
+---
+
+## 3. Ambiente de Desenvolvimento e Testes E2E
+
+### Mock Provider Injection (ERC-4337 Adaptado)
+Para viabilizar testes automatizados (Playwright) sem a necessidade de intervenção manual no Privy (assinatura de transações), a arquitetura suporta a injeção de um **Mock Provider**.
+*   **Fluxo de Teste:** Em ambiente de CI/CD, o Next.js ignora a UI de login e utiliza chaves privadas controladas para assinar transações de Escrow e SLA diretamente no Nodo local do Hardhat. Isso garante testes determinísticos, rápidos e 100% automatizados.
+
+---
+
+## 4. Anatomia das Sub-pastas (Padrão de Implementação)
 
 ```text
-/src
-├── core/                       # Kernel Compartilhado (DDD Building Blocks)
-│   ├── domain/                 # BaseAggregate, BaseEvent, BaseValueObject, UniqueEntityID
-│   └── shared-bus/             # EventBus (NATS/Redis), MessageDispatcher
-├── modules/
-│   ├── identity/               # Contexto de Identidade (Privy/Web3 Auth)
-│   │   ├── domain/             # Agregado: ActorIdentity
-│   │   ├── application/        # Handlers: LinkWallet, Authenticate
-│   │   └── infrastructure/     # Adapters: PrivyAdapter
-│   ├── agreement/              # Contexto de Acordos (Marketplace, Fases e Termos)
-│   │   ├── domain/             # Agregados: ServiceOffer, Agreement, SecretVault, Review
-│   │   ├── application/        # Commands: ProposeAgreement, SignAgreement, ApprovePhase, SubmitReview
-│   │   └── infrastructure/     # Adapters: Prisma, VaultProvider
-│   ├── execution/              # Contexto de Prova de Serviço (O "Proof" & Gatekeeper)
-│   │   ├── domain/             # Agregado: ServiceProof (MerkleTree, HashChain)
-│   │   ├── application/        # Handlers: RegisterMetric, ProvisionAccess
-│   │   └── infrastructure/     # Adapters: Helicone, Chainlink, OracleProvider
-│   └── settlement/             # Contexto Financeiro (O "Trust" & Escrow)
-│       ├── domain/             # Agregado: EscrowAccount, Entidades: Transaction
-│       ├── application/        # Handlers: FundEscrow, ReleasePayment, ExecuteRefund
-│       └── infrastructure/     # Adapters: Viem, Stripe, PaymentGateway
-├── read-side/                  # O Lado de Consulta (CQRS - Projeções otimizadas)
-│   ├── dashboard/              # ViewModels: ActiveAgreements, UptimeTimeline
-│   └── transparency/           # Validators: AuditTrailGenerator, BlockchainVerifier
-└── tests/
-    ├── bdd/                    # Especificações Gherkin (.feature)
-    └── unit/                   # Testes de unidade dos Agregados (Puros)
+/src/modules/[modulo]
+├── domain/
+│   ├── model/           # Agregados, Entidades e VOs (Puros)
+│   ├── events/          # Eventos de domínio (Event Sourcing)
+│   └── repositories/    # Interfaces dos Repositories
+├── application/
+│   ├── use-cases/       # Command Handlers (Orquestração)
+│   └── services/        # Lógica que cruza múltiplos agregados
+├── infrastructure/
+│   ├── persistence/     # Implementação Neon/Prisma
+│   ├── blockchain/      # Smart Contract Repositories (Hardhat)
+│   └── adapters/        # Oráculos, Gateways de Pagamento (PIX)
+└── read-side/
+    ├── projections/     # Lógica de transformação Evento -> Read Model
+    └── dtos/           # Data Transfer Objects para API
 ```
-
----
-
-### Detalhes Estratégicos da Arquitetura
-
-#### 1. A Camada de Domínio (`domain/`)
-Aqui não há frameworks. Se você decidir trocar o Next.js por NestJS ou o banco de dados, o seu código de negócio (regras de multa, cálculos de uptime) permanece intacto.
-*   **Aggregates:** Garantem a consistência. O `Agreement` não pode ser assinado se o status for `Terminated`.
-*   **Value Objects:** Protegem os dados. O `UptimePercentage` não é um `number` comum, é um VO que valida se está entre 0 e 100.
-
-#### 2. A Camada de Infraestrutura (`infrastructure/`)
-Aqui isolamos os "External Agents":
-*   **Blockchain Adapters:** Encapsulam a complexidade do `ethers.js` ou `viem`. O restante do sistema não sabe como o contrato on-chain funciona, apenas chama métodos como `anchorTerms()`.
-*   **Oráculos:** O módulo `execution` trata o `Chainlink` e o `Helicone` como interfaces. Se amanhã você trocar o provedor, só precisa implementar o novo adaptador que segue a interface esperada.
-
-#### 3. A Camada de Leitura (`read-side/`)
-Esta é a chave para a performance do marketplace e dashboards.
-*   Em um sistema **Event Sourcing**, você nunca faz `SELECT SUM(valor) FROM escrows`.
-*   Em vez disso, o `SettlementModule` publica um evento `PaymentReleased`. O projetor ouve esse evento e incrementa o saldo em uma tabela de leitura pronta para o front-end. **Isso elimina queries complexas e garante velocidade.**
-
-#### 4. O Sistema de Auditoria (Transparência)
-A pasta `read-side/transparency` é o que gera a **"Nota Fiscal Blockchain"** (UC-16). Ela lê o `EventStore` de todos os módulos e gera uma prova de integridade (Hash final) que o assinante usa para verificar se o sistema não alterou os dados retroativamente.
-
----
-
-## Detalhamento Técnico Profundo dos Módulos
-
-### 1. Módulo: Agreement (Marketplace e Workflow)
-Responsável por orquestrar a intenção de negócio e o workflow de aprovação entre fases.
-*   **Agregados:**
-    *   `ServiceOffer`: Gerencia a vitrine de serviços e as definições genéricas de fases.
-    *   `Agreement`: Gerencia o workflow dinâmico de fases. Possui uma coleção de `ServicePhase` e um `currentPhaseIndex`.
-    *   `SecretVault`: Ambiente criptografado compartilhado.
-*   **Invariantes:** Uma fase só é ativada se a fase imediatamente anterior no índice estiver com status `COMPLETED`.
-*   **Workflow Dinâmico:** Suporta N fases (Milestones, Recorrências, Setup). Cada fase define seu preço e tipo (Fixo ou Recorrente).
-
-### 2. Módulo: Execution (Gatekeeper e Provas)
-O coração técnico que garante que o serviço contratado foi efetivamente entregue.
-*   **Gatekeeper (Helicone):** Provisiona chaves de API com `budget_cap`. Ativado automaticamente para fases do tipo `RECURRING` assim que estas entram em vigor.
-*   **Prova de Serviço:** Utiliza **Merkle Trees** e **ZK-Proofs** para atestar o cumprimento do SLA.
-
-### 3. Módulo: Settlement (Escrow e Comissões)
-Gerencia a liquidez e garante que o repasse só ocorra quando a regra de negócio for respeitada.
-*   **Regra de Comissão:** Retida atomaticamente no momento do financiamento inicial do Escrow Pool.
-*   **Liquidação:** O `Release` ocorre proporcionalmente ao preço da fase aprovada.
-
-### 4. Módulo: Identity (Privy & Embedded Wallets)
-Responsável pela ponte entre a identidade social e a carteira digital.
-*   **Privy:** Gera automaticamente uma *Embedded Wallet* no login, servindo como o ID único do usuário na Web3.
-
----
-
-### Como esta estrutura escala?
-*   **Flexibilidade de Fases:** O sistema não está preso a "Setup" e "Manutenção". Ele pode suportar "Setup", "Sprint 1", "Sprint 2", "QA", "Go-live" e "Suporte Mensal".
-*   **BDD First:** O comportamento do usuário (assinante e prestador) guia a implementação das máquinas de estado das fases.
