@@ -8,10 +8,15 @@ datasource db {
 }
 
 model Event {
-  id        String   @id @default(uuid())
-  type      String
-  data      Json
-  createdAt DateTime @default(now())
+  id            String   @id @default(uuid())
+  type          String
+  aggregateType String   @map("aggregate_type")
+  aggregateId   String   @map("aggregate_id")
+  data          Json
+  createdAt     DateTime @default(now())
+
+  @@index([aggregateId])
+  @@index([aggregateType])
 }
 
 model Agreement {
@@ -21,6 +26,7 @@ model Agreement {
   termsHash    String
   status       String   @default("PENDING")
   onChainHash  String?
+  proofHash    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

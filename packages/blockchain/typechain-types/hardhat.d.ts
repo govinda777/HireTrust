@@ -17,23 +17,41 @@ declare module "hardhat/types/runtime" {
       name: "AgreementRegistry",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.AgreementRegistry__factory>;
+    getContractFactory(
+      name: "EscrowEngine",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.EscrowEngine__factory>;
 
     getContractAt(
       name: "AgreementRegistry",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.AgreementRegistry>;
+    getContractAt(
+      name: "EscrowEngine",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.EscrowEngine>;
 
     deployContract(
       name: "AgreementRegistry",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.AgreementRegistry>;
+    deployContract(
+      name: "EscrowEngine",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.EscrowEngine>;
 
     deployContract(
       name: "AgreementRegistry",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.AgreementRegistry>;
+    deployContract(
+      name: "EscrowEngine",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.EscrowEngine>;
 
     // default types
     getContractFactory(
