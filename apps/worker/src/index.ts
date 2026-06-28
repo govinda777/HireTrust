@@ -3,11 +3,13 @@ import { AgreementProjection } from './projections/agreement-projection';
 import { EscrowOrchestrator } from './orchestrators/escrow-orchestrator';
 import { HardhatAdapter } from './infrastructure/blockchain/hardhat-adapter';
 import { PrismaClient } from '@hiretrust/database';
-import express from 'express';
-import pixSimulator from './api/pix-simulator';
 
 async function bootstrap() {
-  const amqpUrl = process.env.RABBITMQ_URL || 'amqp://local_user:local_password@localhost:5672';
+  const amqpUrl = process.env.RABBITMQ_URL;
+  if (!amqpUrl) {
+    throw new Error('RABBITMQ_URL must be defined');
+  }
+
   const messaging = new RabbitMQAdapter(amqpUrl);
   const prisma = new PrismaClient();
   const blockchain = new HardhatAdapter();
@@ -33,14 +35,9 @@ async function bootstrap() {
       await orchestrator.onPaymentReceived(event);
     });
 
-    // API for Simulator
-    const app = express();
-    app.use(express.json());
-    app.use('/api', pixSimulator);
-    app.listen(3001, () => console.log('Simulator API on port 3001'));
-
   } catch (error) {
     console.error('Worker failed to start:', error);
+    process.exit(1);
   }
 }
 

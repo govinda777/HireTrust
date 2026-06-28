@@ -7,7 +7,7 @@ export default function ProviderDashboard() {
   const [agreements, setAgreements] = useState<any[]>([]);
 
   useEffect(() => {
-    // In a real app, fetch from Read Model API
+    // In a real app, this would call a Query API route
     setAgreements([
       { id: 'agreement-1', status: 'ACTIVE', subscriberId: 'user-sub-1', termsHash: 'terms-001' },
       { id: 'agreement-2', status: 'PENDING', subscriberId: 'user-sub-2', termsHash: 'terms-002' }
@@ -23,13 +23,13 @@ export default function ProviderDashboard() {
     });
 
     if (response.ok) {
-      alert('Prova enviada com sucesso! O pagamento será liberado on-chain.');
+      alert('Prova enviada via Command! O pagamento será processado assincronamente.');
     }
   };
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Dashboard do Prestador</h1>
+      <h1 className="text-2xl font-bold mb-6">Dashboard do Prestador (Read Model)</h1>
 
       <div className="grid gap-4">
         {agreements.map((agreement) => (
@@ -40,7 +40,7 @@ export default function ProviderDashboard() {
                 {agreement.status === 'ACTIVE' ? (
                   <span className="text-green-600 flex items-center gap-1"><CheckCircle size={16} /> Ativo</span>
                 ) : (
-                  <span className="text-yellow-600 flex items-center gap-1"><Clock size={16} /> Pendente (Aguardando PIX)</span>
+                  <span className="text-yellow-600 flex items-center gap-1"><Clock size={16} /> Pendente</span>
                 )}
               </div>
             </div>
@@ -50,7 +50,7 @@ export default function ProviderDashboard() {
                 onClick={() => handleSubmitProof(agreement.id)}
                 className="bg-blue-600 text-white px-4 py-2 rounded-md flex items-center gap-2 hover:bg-blue-700 transition"
               >
-                <Send size={16} /> Enviar Prova de Serviço
+                <Send size={16} /> Enviar Prova (Command)
               </button>
             )}
           </div>

@@ -1,23 +1,27 @@
 # 🏛️ Guia de Arquitetura e Padronização - HireTrust
 
-Este documento define os padrões rigorosos de **DDD (Domain-Driven Design)**, **CQRS** e **Event Sourcing** para o monorepo HireTrust. Todos os desenvolvedores devem seguir estas diretrizes para garantir a consistência e escalabilidade do sistema.
+Este documento define os padrões rigorosos de **DDD (Domain-Driven Design)**, **CQRS** e **Event Sourcing** para o monorepo HireTrust.
 
 ---
 
 ## 1. O Fluxo de Dados (CQRS & Event Sourcing)
 
-O sistema é dividido em dois modelos independentes que se comunicam via eventos:
+O sistema opera com uma separação estrita entre a escrita (Commands) e a leitura (Queries).
 
-### 🖋️ Write Model (Lado de Comando)
-1. **Comando**: Uma intenção do usuário (ex: `SubmitServiceProofCommand`).
-2. **Caso de Uso (Handler)**: Orquestra a execução. Recupera o Agregado, executa o método de domínio e salva no Event Store.
-3. **Agregado (Aggregate Root)**: Valida as regras de negócio e gera **Eventos de Domínio**.
-4. **Event Store**: Única fonte da verdade. Persiste o evento na tabela `Event`.
+### 🖋️ Command Side (Write Model)
+1. **Command**: Objeto de transferência de dados que representa uma intenção do usuário (ex: `SubmitServiceProofCommand`).
+2. **Command Handler**: Orquestrador que:
+   - Recupera o **Aggregate Root** do **Event Store**.
+   - Invoca a lógica de negócio no Agregado.
+   - Persiste os novos **Domain Events** gerados de volta no Event Store.
+3. **Aggregate Root**: Entidade que encapsula estado e garante a consistência das regras de negócio.
+4. **Event Store**: Banco de dados de eventos (Tabela `Event`), única fonte da verdade.
 
-### 📖 Read Model (Lado de Consulta)
-1. **Event Bus (RabbitMQ)**: Os eventos salvos no Event Store são publicados assincronamente.
-2. **Worker (Projections)**: Escuta os eventos e atualiza tabelas otimizadas para leitura (ex: tabela `Agreement`).
-3. **API (Query)**: Consulta diretamente o Read Model (Postgres) para exibir dados na UI.
+### 📖 Query Side (Read Model)
+1. **Event Bus**: Publica eventos de forma assíncrona.
+2. **Projection Worker**: Consome eventos e popula o **Read Model** (tabelas otimizadas como `Agreement`).
+3. **Query**: Objeto que define os filtros de busca.
+4. **Query Handler**: Lê diretamente do Read Model e retorna DTOs para a UI.
 
 ---
 
@@ -26,90 +30,69 @@ O sistema é dividido em dois modelos independentes que se comunicam via eventos
 ```text
 hiretrust-monorepo/
 ├── apps/
-│   ├── web/ (Next.js - Write Model & UI)
-│   │   ├── src/application/use-cases/    # Handlers de comandos
-│   │   ├── src/infrastructure/messaging/ # Publicador RabbitMQ
-│   │   └── src/app/                      # Roteamento Next.js (Server Actions/API)
-│   └── worker/ (Node.js - Read Model & Effects)
-│       ├── src/projections/              # Atualiza o Read Model (Postgres)
-│       ├── src/orchestrators/            # Efeitos colaterais (ex: Chamar Blockchain)
-│       └── src/infrastructure/messaging/ # Consumidor RabbitMQ
+│   ├── web/ (Write & UI)
+│   │   ├── src/application/commands/     # Intenções de escrita
+│   │   ├── src/application/queries/      # Intenções de leitura
+│   │   ├── src/application/handlers/     # Handlers de Commands e Queries
+│   │   └── src/app/                      # Camada de Apresentação (Next.js)
+│   └── worker/ (Read & Side Effects)
+│       ├── src/projections/              # Projetores para o Read Model
+│       └── src/orchestrators/            # Efeitos colaterais on-chain
 ├── packages/
-│   ├── shared/ (Núcleo do Domínio)
+│   ├── shared/ (Domain Core)
 │   │   └── src/modules/
-│   │       └── [modulo]/                 # Ex: agreement, escrow
+│   │       └── [modulo]/
 │   │           ├── domain/
-│   │           │   ├── model/            # Agregados e Entidades
-│   │           │   ├── events/           # Classes de Eventos de Domínio
-│   │           │   └── repositories/     # Interfaces de repositório
-│   ├── database/ (Persistência)
-│   │   ├── prisma/schema.prisma          # Modelos (EventStore + ReadModel)
-│   │   └── src/repositories/             # Implementações concretas (Prisma)
-│   └── blockchain/ (Contratos e Web3)
-│       ├── contracts/                    # Solidity (AgreementRegistry, EscrowEngine)
-│       └── typechain-types/              # Tipos gerados para o TS
-└── docs/                                 # Documentação técnica
+│   │           │   ├── model/            # Agregados (Pure Domain)
+│   │           │   ├── events/           # Domain Events
+│   │           │   └── value-objects/    # Objetos de Valor
+│   │           └── dtos/                 # DTOs de Saída do Read Model
+│   ├── database/ (Infraestrutura)
+│   │   ├── prisma/schema.prisma          # EventStore + ReadModel schemas
+│   │   └── src/repositories/             # Implementações concretas
+│   └── blockchain/ (Web3 Layer)
+└── docs/
 ```
 
 ---
 
-## 3. Templates de Implementação (Exemplo: SubmitServiceProof)
+## 3. Exemplo de Implementação CQRS Completa
 
-### A. Comando (apps/web)
+### A. Escrita (Command Handler)
 ```typescript
-export class SubmitServiceProofCommand {
-  constructor(
-    public readonly agreementId: string,
-    public readonly providerAddress: string,
-    public readonly proofHash: string
-  ) {}
-}
-```
-
-### B. Agregado (packages/shared)
-```typescript
-export class Agreement extends AggregateRoot {
-  public submitProof(proofHash: string): void {
-    if (this.status !== 'ACTIVE') throw new Error("Agreement not active");
-
-    this.apply(new ServiceProofSubmittedEvent(this.id, proofHash));
+// apps/web/src/application/handlers/submit-service-proof.handler.ts
+export class SubmitServiceProofHandler {
+  async handle(command: SubmitServiceProofCommand) {
+    const agreement = await this.eventStore.load(Agreement, command.agreementId);
+    agreement.submitProof(command.proofHash);
+    await this.eventStore.save(agreement);
   }
 }
 ```
 
-### C. Evento de Domínio (packages/shared)
+### B. Leitura (Query Handler)
 ```typescript
-export class ServiceProofSubmittedEvent extends DomainEvent {
-  static readonly type = 'SERVICE_PROOF_SUBMITTED';
-  constructor(
-    public readonly aggregateId: string,
-    public readonly proofHash: string
-  ) {
-    super(ServiceProofSubmittedEvent.type, aggregateId);
+// apps/web/src/application/handlers/get-provider-agreements.handler.ts
+export class GetProviderAgreementsHandler {
+  async handle(query: GetProviderAgreementsQuery): Promise<AgreementDTO[]> {
+    return this.prisma.agreement.findMany({
+      where: { providerId: query.providerId }
+    });
   }
 }
 ```
 
 ---
 
-## 4. Estratégia de Testes Inteligentes
+## 4. Estratégia de Testes
 
-O projeto utiliza **Turborepo** e **Vitest** para garantir que apenas o código alterado seja testado.
-
-### 🧪 Testes de Unidade (Pre-commit)
-*   **Foco**: Agregados, Regras de Negócio e Helpers.
-*   **Local**: Arquivos `*.spec.ts` junto ao código.
-*   **Execução**: Gatilho via Husky no `git commit`. Deve ser rápido e sem dependências externas.
-
-### 🔌 Testes de Integração & E2E (Pre-push)
-*   **Foco**: Fluxos completos (Comando -> Evento -> Projeção), Contratos Inteligentes e APIs.
-*   **Local**: Arquivos `*.test.ts` ou pasta `tests/`.
-*   **Execução**: Gatilho via Husky no `git push`. Valida a integração com Postgres, RabbitMQ e Hardhat.
+- **Unitários (Unit)**: Testam o Agregado em isolamento.
+- **Integração (Integration)**: Testam Command Handlers + Event Store.
+- **E2E**: Testam o fluxo completo Command -> Worker -> Query.
 
 ---
 
-## 5. Critérios de Conformidade (Checklist)
-- [ ] O **Write Model** não faz `SELECT` em tabelas de projeção.
-- [ ] O **Read Model** é atualizado exclusivamente por eventos.
-- [ ] Entidades de domínio não possuem dependências de infraestrutura (Prisma/Web3).
-- [ ] Todo evento possui `aggregate_type` e `aggregate_id`.
+## 5. Regras de Ouro
+1. **NUNCA** faça joins entre tabelas de domínio e tabelas de projeção.
+2. **NUNCA** atualize o Read Model diretamente do Write Model.
+3. O Agregado deve ser reconstruído a partir dos eventos (re-hydration).

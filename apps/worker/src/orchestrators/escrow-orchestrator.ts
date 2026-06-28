@@ -8,9 +8,13 @@ export class EscrowOrchestrator {
   ) {}
 
   async onPaymentReceived(event: any): Promise<void> {
-    // In a real scenario, we'd get the provider address and amount from the Agreement Read Model
-    const providerAddress = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'; // Hardhat #1
-    const amountEth = '0.1';
+    const providerAddress = process.env.PROVIDER_ADDRESS || '';
+    const amountEth = process.env.DEFAULT_AMOUNT || '0.1';
+
+    if (!providerAddress) {
+      console.error('PROVIDER_ADDRESS not set, skipping lockFunds');
+      return;
+    }
 
     try {
       const txHash = await this.blockchain.lockFunds(event.aggregateId, providerAddress, amountEth);
