@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id        String   @id @default(uuid())
+  type      String
+  data      Json
+  createdAt DateTime @default(now())
+}
+
+model Agreement {
+  id           String   @id
+  subscriberId String
+  providerId   String
+  termsHash    String
+  status       String   @default("PENDING")
+  onChainHash  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Offer {
+  id          String   @id @default(uuid())
+  providerId  String
+  title       String
+  description String
+  price       Decimal
+  createdAt   DateTime @default(now())
+}

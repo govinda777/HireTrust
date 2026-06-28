@@ -1,0 +1,15 @@
+{
+  "name": "@hiretrust/database",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.9.1"
+  },
+  "devDependencies": {
+    "prisma": "^5.9.1"
+  }
+}

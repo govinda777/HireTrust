@@ -1,0 +1,18 @@
+{
+  "name": "@hiretrust/worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "ts-node-dev --respawn src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@hiretrust/shared": "workspace:*",
+    "amqplib": "^0.10.3"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.5",
+    "ts-node-dev": "^2.0.0"
+  }
+}
