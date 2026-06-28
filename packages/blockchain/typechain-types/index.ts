@@ -2,5 +2,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export type { AgreementRegistry } from "./AgreementRegistry";
+export type { EscrowEngine } from "./EscrowEngine";
 export * as factories from "./factories";
 export { AgreementRegistry__factory } from "./factories/AgreementRegistry__factory";
+export { EscrowEngine__factory } from "./factories/EscrowEngine__factory";

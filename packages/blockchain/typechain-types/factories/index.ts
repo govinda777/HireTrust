@@ -2,3 +2,4 @@
 /* tslint:disable */
 /* eslint-disable */
 export { AgreementRegistry__factory } from "./AgreementRegistry__factory";
+export { EscrowEngine__factory } from "./EscrowEngine__factory";

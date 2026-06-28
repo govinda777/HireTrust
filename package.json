@@ -2,11 +2,26 @@
   "name": "hiretrust-monorepo",
   "private": true,
   "scripts": {
-    "dev": "pnpm -r dev",
-    "build": "pnpm -r build",
-    "test": "pnpm -r test"
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run -c vitest.config.integration.ts",
+    "test:blockchain": "cd packages/blockchain && npx hardhat test",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "@vitest/coverage-v8": "^4.1.9",
+    "@vitest/ui": "^4.1.9",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "turbo": "^2.10.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.9"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "vitest run --passWithNoTests"
+    ]
   }
 }
