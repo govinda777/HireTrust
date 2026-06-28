@@ -13,7 +13,6 @@
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.9",
     "@vitest/ui": "^4.1.9",
-    "chai": "^6.2.2",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
     "turbo": "^2.10.0",
