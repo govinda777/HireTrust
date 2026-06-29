@@ -20,7 +20,8 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@hiretrust/shared/*": ["../../packages/shared/src/*"]
+      "@hiretrust/shared/*": ["../../packages/shared/src/*"],
+      "@hiretrust/database": ["../../packages/database/src/index.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

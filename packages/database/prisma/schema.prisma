@@ -39,3 +39,28 @@ model Offer {
   price       Decimal
   createdAt   DateTime @default(now())
 }
+
+model Subscription {
+  id             String         @id
+  subscriberId   String
+  agreementId    String
+  planId         String
+  intervalInDays Int
+  price          Decimal
+  status         String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  cycles         BillingCycle[]
+}
+
+model BillingCycle {
+  id             String       @id
+  subscriptionId String
+  cycleNumber    Int
+  status         String
+  dueDate        DateTime
+  paymentDate    DateTime?
+  proofHash      String?
+  createdAt      DateTime     @default(now())
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+}
