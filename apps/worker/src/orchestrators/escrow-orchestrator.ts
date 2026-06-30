@@ -1,9 +1,9 @@
-import { HardhatAdapter } from '../infrastructure/blockchain/hardhat-adapter';
+import { BlockchainProvider } from '../application/ports/blockchain-provider.interface';
 import { RabbitMQAdapter } from '@hiretrust/shared/infrastructure/messaging/rabbitmq-adapter';
 
 export class EscrowOrchestrator {
   constructor(
-    private readonly blockchain: HardhatAdapter,
+    private readonly blockchain: BlockchainProvider,
     private readonly messaging: RabbitMQAdapter
   ) {}
 

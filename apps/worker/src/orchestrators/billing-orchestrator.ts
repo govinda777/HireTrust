@@ -1,10 +1,10 @@
-import { HardhatAdapter } from '../infrastructure/blockchain/hardhat-adapter';
+import { BlockchainProvider } from '../application/ports/blockchain-provider.interface';
 import { RabbitMQAdapter } from '@hiretrust/shared/infrastructure/messaging/rabbitmq-adapter';
 import { PrismaClient } from '@hiretrust/database';
 
 export class BillingOrchestrator {
   constructor(
-    private readonly blockchain: HardhatAdapter,
+    private readonly blockchain: BlockchainProvider,
     private readonly messaging: RabbitMQAdapter,
     private readonly prisma: PrismaClient
   ) {}
@@ -62,7 +62,7 @@ export class BillingOrchestrator {
     console.log(`Cycle ${cycleId} completed. Releasing funds...`);
 
     try {
-      // In a real scenario, the HardhatAdapter should be updated to include releaseFunds
+      // In a real scenario, the BlockchainProvider should be updated to include releaseFunds
       // For now, we'll assume it exists or implement it if possible.
       // await this.blockchain.releaseFunds(cycleId, proofHash);
 

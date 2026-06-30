@@ -3,7 +3,7 @@ import { AgreementProjection } from './projections/agreement-projection';
 import { SubscriptionProjection } from './projections/subscription-projection';
 import { EscrowOrchestrator } from './orchestrators/escrow-orchestrator';
 import { BillingOrchestrator } from './orchestrators/billing-orchestrator';
-import { HardhatAdapter } from './infrastructure/blockchain/hardhat-adapter';
+import { EthersAdapter } from './infrastructure/blockchain/ethers-adapter';
 import { PrismaClient } from '@hiretrust/database';
 
 async function bootstrap() {
@@ -14,7 +14,7 @@ async function bootstrap() {
 
   const messaging = new RabbitMQAdapter(amqpUrl);
   const prisma = new PrismaClient();
-  const blockchain = new HardhatAdapter();
+  const blockchain = new EthersAdapter();
 
   const agreementProjection = new AgreementProjection(prisma);
   const subscriptionProjection = new SubscriptionProjection(prisma);

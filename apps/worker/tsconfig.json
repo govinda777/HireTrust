@@ -5,12 +5,15 @@
     "moduleResolution": "node",
     "baseUrl": ".",
     "paths": {
-      "@hiretrust/shared/*": ["../../packages/shared/src/*"]
+      "@hiretrust/shared/*": ["../../packages/shared/src/*"],
+      "@hiretrust/database": ["../../packages/database/src/index.ts"],
+      "@blockchain/*": ["../../packages/blockchain/*"]
     },
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
     "outDir": "dist"
   },
   "include": ["src/**/*"]

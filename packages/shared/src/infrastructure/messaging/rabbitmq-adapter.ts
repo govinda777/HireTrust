@@ -1,8 +1,8 @@
-import amqp, { Channel, Connection } from 'amqplib';
+import * as amqp from 'amqplib';
 
 export class RabbitMQAdapter {
-  private connection?: Connection;
-  private channel?: Channel;
+  private connection?: any;
+  private channel?: any;
 
   constructor(private readonly url: string) {}
 
@@ -23,7 +23,7 @@ export class RabbitMQAdapter {
     const q = await this.channel.assertQueue(queue, { durable: true });
     await this.channel.bindQueue(q.queue, exchange, routingKey);
 
-    this.channel.consume(q.queue, (msg) => {
+    this.channel.consume(q.queue, (msg: any) => {
       if (msg) {
         onMessage(JSON.parse(msg.content.toString()));
         this.channel?.ack(msg);
