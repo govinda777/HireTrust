@@ -13,6 +13,7 @@ describe('BillingOrchestrator', () => {
   beforeEach(() => {
     mockBlockchain = {
       lockFunds: vi.fn().mockResolvedValue('0x-tx-hash'),
+      releaseFunds: vi.fn().mockResolvedValue('0x-release-tx-hash'),
     };
     mockMessaging = {
       publish: vi.fn().mockResolvedValue(undefined),

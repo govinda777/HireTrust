@@ -48,6 +48,7 @@ model Subscription {
   intervalInDays Int
   price          Decimal
   status         String
+  healthScore    Float          @default(100)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   cycles         BillingCycle[]
@@ -63,4 +64,27 @@ model BillingCycle {
   proofHash      String?
   createdAt      DateTime     @default(now())
   subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+}
+
+model SlaPolicy {
+  id              String      @id
+  agreementId     String      @unique
+  minUptime       Float
+  maxResponseTime Float
+  minSuccessRate  Float
+  metrics         SlaMetric[]
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model SlaMetric {
+  id          String    @id @default(uuid())
+  slaPolicyId String
+  cycleId     String
+  type        String
+  value       Float
+  timestamp   DateTime  @default(now())
+  slaPolicy   SlaPolicy @relation(fields: [slaPolicyId], references: [id])
+
+  @@index([cycleId])
 }

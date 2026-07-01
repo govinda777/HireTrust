@@ -7,19 +7,20 @@ export default async function SubscriberDashboard() {
     id: 'sub-123',
     status: 'ACTIVE',
     nextBillingDate: '2024-05-20',
-    price: '100.00'
+    price: '100.00',
+    healthScore: 98 // Simulating new health score metric
   };
 
   const cycles = [
-    { id: 'sub123_cycle2', number: 2, status: 'IN_ESCROW', dueDate: '2024-04-20', proofHash: null },
-    { id: 'sub123_cycle1', number: 1, status: 'RELEASED', dueDate: '2024-03-20', proofHash: '0xabc...def' },
+    { id: 'sub123_cycle2', number: 2, status: 'IN_ESCROW', dueDate: '2024-04-20', proofHash: null, performance: 'Verifying...' },
+    { id: 'sub123_cycle1', number: 1, status: 'RELEASED', dueDate: '2024-03-20', proofHash: '0xabc...def', performance: '100% Uptime' },
   ];
 
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold mb-6">Meu Plano HireTrust</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <p className="text-gray-500 text-sm">Status da Assinatura</p>
           <p className="text-xl font-semibold text-green-600">{subscription.status}</p>
@@ -32,6 +33,15 @@ export default async function SubscriberDashboard() {
           <p className="text-gray-500 text-sm">Valor Mensal</p>
           <p className="text-xl font-semibold">ETH {subscription.price}</p>
         </div>
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <p className="text-gray-500 text-sm">Health Score (SLA)</p>
+          <div className="flex items-center gap-2">
+            <p className="text-xl font-semibold">{subscription.healthScore}%</p>
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${subscription.healthScore}%` }}></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <h2 className="text-xl font-bold mb-4">Histórico de Faturamento & Ciclos</h2>
@@ -42,6 +52,7 @@ export default async function SubscriberDashboard() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ciclo</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vencimento</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Performance (Oracle)</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prova de Serviço (PoS)</th>
             </tr>
           </thead>
@@ -57,6 +68,9 @@ export default async function SubscriberDashboard() {
                   }`}>
                     {cycle.status}
                   </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {cycle.performance}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                   {cycle.proofHash || 'Aguardando...'}

@@ -25,4 +25,10 @@ export class EthersAdapter implements BlockchainProvider {
     const receipt = await tx.wait();
     return receipt.hash;
   }
+
+  async releaseFunds(agreementId: string, proofHash: string): Promise<string> {
+    const tx = await this.escrowContract.releaseFunds(agreementId, proofHash);
+    const receipt = await tx.wait();
+    return receipt.hash;
+  }
 }
